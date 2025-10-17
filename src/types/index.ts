@@ -75,6 +75,11 @@ export interface CreateCryptocurrencyInput {
   decimalPlaces: number;
 }
 
+export interface UpdateCryptocurrencyInput {
+  name: string;
+  decimalPlaces: number;
+}
+
 export interface CreatePortfolioInput {
   name: string;
   totalDeposit: number;

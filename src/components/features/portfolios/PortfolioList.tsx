@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CreatePortfolioModal } from './CreatePortfolioModal';
@@ -125,9 +126,11 @@ export function PortfolioList() {
                     </div>
                   </div>
 
-                  <Button variant="outline" className="w-full mt-4">
-                    Open
-                  </Button>
+                  <Link href={`/dashboard/portfolio/${portfolio._id}`}>
+                    <Button variant="outline" className="w-full mt-4">
+                      Open
+                    </Button>
+                  </Link>
                 </CardContent>
               </Card>
             ))}

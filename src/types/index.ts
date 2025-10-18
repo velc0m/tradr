@@ -123,3 +123,54 @@ export interface PartialCloseInput {
   exitFee: number;
   closeDate: string;
 }
+
+// Portfolio Statistics types
+export interface TradeWithProfit extends ITrade {
+  profitUSD: number;
+  profitPercent: number;
+}
+
+export interface CoinPerformance {
+  coinSymbol: string;
+  tradesCount: number;
+  winRate: number;
+  totalProfitUSD: number;
+  avgProfitPercent: number;
+  bestTrade: {
+    profitUSD: number;
+    profitPercent: number;
+  } | null;
+  worstTrade: {
+    profitUSD: number;
+    profitPercent: number;
+  } | null;
+}
+
+export interface CumulativeProfitPoint {
+  date: string;
+  profit: number;
+}
+
+export interface PortfolioStatistics {
+  totalProfitUSD: number;
+  totalProfitPercent: number;
+  winRate: number;
+  avgProfitUSD: number;
+  avgProfitPercent: number;
+  totalROI: number;
+  totalTrades: {
+    open: number;
+    filled: number;
+    closed: number;
+  };
+  bestTrade: {
+    trade: TradeWithProfit;
+  } | null;
+  worstTrade: {
+    trade: TradeWithProfit;
+  } | null;
+  performanceByCoin: CoinPerformance[];
+  topProfitableTrades: TradeWithProfit[];
+  topLosingTrades: TradeWithProfit[];
+  cumulativeProfit: CumulativeProfitPoint[];
+}

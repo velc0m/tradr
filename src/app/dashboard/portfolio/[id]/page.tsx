@@ -33,7 +33,7 @@ import { PartialCloseModal } from '@/components/features/trades/PartialCloseModa
 import { GroupedClosedTradeRow, TradeGroup } from '@/components/features/trades/GroupedClosedTradeRow';
 import { useToast } from '@/components/ui/use-toast';
 import { IPortfolio, ITrade, TradeStatus } from '@/types';
-import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3 } from 'lucide-react';
 
 interface PortfolioPageProps {
   params: {
@@ -47,6 +47,11 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   const [portfolio, setPortfolio] = useState<IPortfolio | null>(null);
   const [trades, setTrades] = useState<ITrade[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [quickStats, setQuickStats] = useState<{
+    totalClosedTrades: number;
+    totalProfitUSD: number;
+    winRate: number;
+  } | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateTradeModal, setShowCreateTradeModal] = useState(false);
   const [showEditExitPriceModal, setShowEditExitPriceModal] = useState(false);
@@ -67,6 +72,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     if (status === 'authenticated') {
       fetchPortfolio();
       fetchTrades();
+      fetchQuickStats();
     }
   }, [status, params.id]);
 
@@ -135,6 +141,24 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
         description: 'Failed to load trades',
         variant: 'destructive',
       });
+    }
+  };
+
+  const fetchQuickStats = async () => {
+    try {
+      const response = await fetch(`/api/portfolios/${params.id}/stats`);
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        setQuickStats({
+          totalClosedTrades: data.data.totalTrades.closed,
+          totalProfitUSD: data.data.totalProfitUSD,
+          winRate: data.data.winRate,
+        });
+      }
+    } catch (error) {
+      // Silently fail - quick stats are not critical
+      console.error('Failed to load quick stats:', error);
     }
   };
 
@@ -478,7 +502,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
             </div>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardHeader>
                 <CardTitle>Portfolio Overview</CardTitle>
@@ -545,6 +569,52 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                     );
                   })}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Quick Stats
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {quickStats ? (
+                  <>
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-2">
+                        Total Closed Trades
+                      </div>
+                      <div className="text-2xl font-bold">{quickStats.totalClosedTrades}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-2">
+                        Overall P/L
+                      </div>
+                      <div className={`text-2xl font-bold ${quickStats.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {quickStats.totalProfitUSD >= 0 ? '+' : ''}${quickStats.totalProfitUSD.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-2">
+                        Win Rate
+                      </div>
+                      <div className="text-2xl font-bold">{quickStats.winRate.toFixed(2)}%</div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">Loading stats...</div>
+                )}
+                <Link href={`/dashboard/portfolio/${params.id}/stats`}>
+                  <Button className="w-full mt-2" variant="outline">
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    View Detailed Statistics
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </div>

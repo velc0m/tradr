@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { EditPortfolioModal } from '@/components/features/portfolios/EditPortfolioModal';
 import { CreateTradeModal } from '@/components/features/trades/CreateTradeModal';
+import { EditTradeDialog } from '@/components/features/trades/EditTradeDialog';
 import { EditExitPriceModal } from '@/components/features/trades/EditExitPriceModal';
 import { MarkAsFilledDialog } from '@/components/features/trades/MarkAsFilledDialog';
 import { CloseTradeDialog } from '@/components/features/trades/CloseTradeDialog';
@@ -33,7 +34,7 @@ import { PartialCloseModal } from '@/components/features/trades/PartialCloseModa
 import { GroupedClosedTradeRow, TradeGroup } from '@/components/features/trades/GroupedClosedTradeRow';
 import { useToast } from '@/components/ui/use-toast';
 import { IPortfolio, ITrade, TradeStatus } from '@/types';
-import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3, Pencil } from 'lucide-react';
 
 interface PortfolioPageProps {
   params: {
@@ -54,6 +55,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   } | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateTradeModal, setShowCreateTradeModal] = useState(false);
+  const [showEditTradeDialog, setShowEditTradeDialog] = useState(false);
   const [showEditExitPriceModal, setShowEditExitPriceModal] = useState(false);
   const [showMarkAsFilledDialog, setShowMarkAsFilledDialog] = useState(false);
   const [showCloseTradeDialog, setShowCloseTradeDialog] = useState(false);
@@ -171,7 +173,25 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   };
 
   const handleTradeUpdated = (updatedTrade: ITrade) => {
-    setTrades(trades.map((t) => (t._id === updatedTrade._id ? updatedTrade : t)));
+    console.log('=== HANDLE TRADE UPDATED ===');
+    console.log('Updated trade received:', updatedTrade);
+    console.log('Trade ID:', updatedTrade._id);
+    console.log('Updated amount:', updatedTrade.amount);
+    console.log('Updated originalAmount:', updatedTrade.originalAmount);
+    console.log('Updated remainingAmount:', updatedTrade.remainingAmount);
+    console.log('Current trades count:', trades.length);
+
+    const newTrades = trades.map((t) => (t._id === updatedTrade._id ? updatedTrade : t));
+    console.log('New trades array created, count:', newTrades.length);
+    setTrades(newTrades);
+
+    // If trade was closed, update Quick Stats
+    if (updatedTrade.status === TradeStatus.CLOSED) {
+      console.log('Trade was closed, refreshing Quick Stats...');
+      fetchQuickStats();
+    }
+
+    console.log('=== END HANDLE TRADE UPDATED ===');
   };
 
 
@@ -268,7 +288,34 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
       // Exit value for remaining amount
       const exitValue = remainingAmount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
 
-      return exitValue - proportionalEntryCost;
+      const profitUSD = exitValue - proportionalEntryCost;
+
+      // Detailed logging for debugging
+      if (trade.coinSymbol === 'BTC') {
+        console.log(`=== ${trade.coinSymbol} Trade Profit Calculation ===`);
+        console.log('Trade ID:', trade._id);
+        console.log('Entry Price: $' + trade.entryPrice);
+        console.log('Exit Price: $' + trade.exitPrice);
+        console.log('Amount (from DB): ' + trade.amount);
+        console.log('Original Amount: ' + originalAmount);
+        console.log('Remaining Amount: ' + remainingAmount);
+        console.log('Entry Fee: ' + trade.entryFee + '%');
+        console.log('Exit Fee: ' + (trade.exitFee || 0) + '%');
+        console.log('Sum+Fee (Entry Cost): $' + trade.sumPlusFee.toFixed(2));
+        console.log('');
+        console.log('Calculation:');
+        console.log('Proportion: ' + remainingAmount + ' / ' + originalAmount + ' = ' + proportion);
+        console.log('Proportional Entry Cost: $' + trade.sumPlusFee + ' × ' + proportion + ' = $' + proportionalEntryCost.toFixed(2));
+        console.log('');
+        console.log('Gross Exit Value: ' + remainingAmount + ' × $' + trade.exitPrice + ' = $' + (remainingAmount * trade.exitPrice).toFixed(2));
+        console.log('Exit Fee Multiplier: (100 - ' + (trade.exitFee || 0) + ') / 100 = ' + ((100 - (trade.exitFee || 0)) / 100));
+        console.log('Net Exit Value: $' + (remainingAmount * trade.exitPrice).toFixed(2) + ' × ' + ((100 - (trade.exitFee || 0)) / 100) + ' = $' + exitValue.toFixed(2));
+        console.log('');
+        console.log('Profit USD: $' + exitValue.toFixed(2) + ' - $' + proportionalEntryCost.toFixed(2) + ' = $' + profitUSD.toFixed(2));
+        console.log('=== END CALCULATION ===');
+      }
+
+      return profitUSD;
     }
 
     // For closed trades, use actual amount (what was closed)
@@ -279,6 +326,14 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   const formatPrice = (price: number): string => {
     // Remove trailing zeros and unnecessary decimals
     const formatted = price.toFixed(6);
+    const trimmed = formatted.replace(/\.?0+$/, '');
+    return trimmed;
+  };
+
+  const formatAmount = (amount: number): string => {
+    // Show all significant digits for amount (up to 10 decimal places)
+    // Remove trailing zeros
+    const formatted = amount.toFixed(10);
     const trimmed = formatted.replace(/\.?0+$/, '');
     return trimmed;
   };
@@ -689,11 +744,11 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                             <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
                             <TableCell>${trade.sumPlusFee.toFixed(2)}</TableCell>
                             <TableCell>
-                              {originalAmount.toFixed(8)}
+                              {formatAmount(originalAmount)}
                             </TableCell>
                             <TableCell>
                               <span className={remainingAmount < originalAmount ? 'text-yellow-500 font-medium' : ''}>
-                                {remainingAmount.toFixed(8)}
+                                {formatAmount(remainingAmount)}
                               </span>
                               {remainingAmount < originalAmount && (
                                 <span className="text-xs text-yellow-500/60 block">
@@ -724,6 +779,18 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
+                                {/* Edit button - available for open and filled trades */}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setTradeToEdit(trade);
+                                    setShowEditTradeDialog(true);
+                                  }}
+                                  title="Edit Trade"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
                                 {trade.status === TradeStatus.OPEN && (
                                   <>
                                     <Button
@@ -855,6 +922,13 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
           />
         </>
       )}
+
+      <EditTradeDialog
+        open={showEditTradeDialog}
+        onOpenChange={setShowEditTradeDialog}
+        trade={tradeToEdit}
+        onSuccess={handleTradeUpdated}
+      />
 
       {tradeToEdit && (
         <EditExitPriceModal

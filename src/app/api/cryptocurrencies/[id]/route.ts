@@ -8,9 +8,9 @@ import { ApiResponse, UpdateCryptocurrencyInput } from '@/types';
 import { z } from 'zod';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 const updateCryptoSchema = z.object({
@@ -44,7 +44,7 @@ export async function PUT(
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
     const body: UpdateCryptocurrencyInput = await request.json();
 
     // Validate input
@@ -134,7 +134,7 @@ export async function DELETE(
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
 
     await connectDB();
 

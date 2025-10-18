@@ -39,8 +39,9 @@ export interface IPortfolio extends Document {
 
 // Trade types
 export enum TradeStatus {
-  OPEN = 'OPEN',
-  CLOSED = 'CLOSED',
+  OPEN = 'open',
+  FILLED = 'filled',
+  CLOSED = 'closed',
 }
 
 export interface ITrade extends Document {
@@ -51,10 +52,12 @@ export interface ITrade extends Document {
   entryPrice: number;
   depositPercent: number;
   entryFee: number;
+  sumPlusFee: number; // Amount in USD that user inputs manually from exchange
   exitPrice?: number;
   exitFee?: number;
-  amount: number;
+  amount: number; // Amount in coins (manual input from exchange)
   openDate: Date;
+  filledDate?: Date; // Date when trade was filled on exchange
   closeDate?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -87,15 +90,24 @@ export interface CreatePortfolioInput {
 }
 
 export interface CreateTradeInput {
-  portfolioId: string;
   coinSymbol: string;
   entryPrice: number;
   depositPercent: number;
   entryFee: number;
   amount: number;
+  sumPlusFee: number;
 }
 
-export interface CloseTradeInput {
+export interface UpdateTradeInput {
+  status?: TradeStatus;
+  exitPrice?: number;
+  exitFee?: number;
+  amount?: number;
+  sumPlusFee?: number;
+  closeDate?: Date;
+}
+
+export interface UpdateExitPriceInput {
   exitPrice: number;
   exitFee: number;
 }

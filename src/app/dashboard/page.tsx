@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { signOut } from 'next-auth/react';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { PortfolioList } from '@/components/features/portfolios/PortfolioList';
 import { Toaster } from '@/components/ui/toaster';
@@ -48,7 +49,17 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Tradr</h1>
+          <div className="flex items-center gap-6">
+            <h1 className="text-2xl font-bold">Tradr</h1>
+            <nav className="hidden md:flex gap-4">
+              <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Portfolios
+              </Link>
+              <Link href="/dashboard/cryptocurrencies" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Cryptocurrencies
+              </Link>
+            </nav>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">
               {session?.user?.email}

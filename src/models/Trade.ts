@@ -37,7 +37,12 @@ const TradeSchema = new Schema<ITrade>(
       type: Number,
       required: [true, 'Entry fee is required'],
       min: [0, 'Entry fee cannot be negative'],
-      default: 0,
+      default: 0.1,
+    },
+    sumPlusFee: {
+      type: Number,
+      required: [true, 'Sum plus fee is required'],
+      min: [0, 'Sum plus fee cannot be negative'],
     },
     exitPrice: {
       type: Number,
@@ -46,7 +51,7 @@ const TradeSchema = new Schema<ITrade>(
     exitFee: {
       type: Number,
       min: [0, 'Exit fee cannot be negative'],
-      default: 0,
+      default: 0.1,
     },
     amount: {
       type: Number,
@@ -57,6 +62,9 @@ const TradeSchema = new Schema<ITrade>(
       type: Date,
       required: [true, 'Open date is required'],
       default: Date.now,
+    },
+    filledDate: {
+      type: Date,
     },
     closeDate: {
       type: Date,

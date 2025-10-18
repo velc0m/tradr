@@ -56,6 +56,11 @@ export interface ITrade extends Document {
   exitPrice?: number;
   exitFee?: number;
   amount: number; // Amount in coins (manual input from exchange)
+  originalAmount?: number; // Initial amount of coins when trade was created
+  remainingAmount?: number; // Remaining amount of coins not yet sold
+  isPartialClose?: boolean; // True if this is a partial close record
+  parentTradeId?: string; // Reference to parent trade for partial closes
+  closedAmount?: number; // Amount of coins closed in this partial close
   openDate: Date;
   filledDate?: Date; // Date when trade was filled on exchange
   closeDate?: Date;
@@ -110,4 +115,11 @@ export interface UpdateTradeInput {
 export interface UpdateExitPriceInput {
   exitPrice: number;
   exitFee: number;
+}
+
+export interface PartialCloseInput {
+  amountToClose: number;
+  exitPrice: number;
+  exitFee: number;
+  closeDate: string;
 }

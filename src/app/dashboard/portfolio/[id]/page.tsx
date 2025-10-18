@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { redirect, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -29,9 +29,11 @@ import { CreateTradeModal } from '@/components/features/trades/CreateTradeModal'
 import { EditExitPriceModal } from '@/components/features/trades/EditExitPriceModal';
 import { MarkAsFilledDialog } from '@/components/features/trades/MarkAsFilledDialog';
 import { CloseTradeDialog } from '@/components/features/trades/CloseTradeDialog';
+import { PartialCloseModal } from '@/components/features/trades/PartialCloseModal';
+import { GroupedClosedTradeRow, TradeGroup } from '@/components/features/trades/GroupedClosedTradeRow';
 import { useToast } from '@/components/ui/use-toast';
 import { IPortfolio, ITrade, TradeStatus } from '@/types';
-import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle } from 'lucide-react';
 
 interface PortfolioPageProps {
   params: {
@@ -50,9 +52,11 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   const [showEditExitPriceModal, setShowEditExitPriceModal] = useState(false);
   const [showMarkAsFilledDialog, setShowMarkAsFilledDialog] = useState(false);
   const [showCloseTradeDialog, setShowCloseTradeDialog] = useState(false);
+  const [showPartialCloseModal, setShowPartialCloseModal] = useState(false);
   const [tradeToEdit, setTradeToEdit] = useState<ITrade | null>(null);
   const [tradeToFill, setTradeToFill] = useState<ITrade | null>(null);
   const [tradeToClose, setTradeToClose] = useState<ITrade | null>(null);
+  const [tradeToPartialClose, setTradeToPartialClose] = useState<ITrade | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTradeDialogOpen, setDeleteTradeDialogOpen] = useState(false);
   const [tradeToDelete, setTradeToDelete] = useState<ITrade | null>(null);
@@ -110,6 +114,19 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
       const data = await response.json();
 
       if (data.success && data.data) {
+        console.log('=== FETCHED TRADES ===');
+        console.log('Total trades:', data.data.length);
+        data.data.forEach((trade: ITrade) => {
+          console.log(`Trade ${trade._id}:`, {
+            coinSymbol: trade.coinSymbol,
+            status: trade.status,
+            originalAmount: trade.originalAmount,
+            remainingAmount: trade.remainingAmount,
+            isPartialClose: trade.isPartialClose,
+            parentTradeId: trade.parentTradeId,
+          });
+        });
+        console.log('=== END FETCHED TRADES ===');
         setTrades(data.data);
       }
     } catch (error) {
@@ -210,8 +227,27 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     );
   };
 
+  // Calculate Profit USD for REMAINING amount in Open Trades
+  // For Closed Trades, uses the actual amount that was closed
   const calculateProfitUSD = (trade: ITrade): number | null => {
     if (!trade.exitPrice) return null;
+
+    // For open/filled trades, use remaining amount
+    if (trade.status === TradeStatus.OPEN || trade.status === TradeStatus.FILLED) {
+      const remainingAmount = trade.remainingAmount ?? trade.amount;
+      const originalAmount = trade.originalAmount ?? trade.amount;
+
+      // Proportional entry cost for remaining amount
+      const proportion = remainingAmount / originalAmount;
+      const proportionalEntryCost = trade.sumPlusFee * proportion;
+
+      // Exit value for remaining amount
+      const exitValue = remainingAmount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
+
+      return exitValue - proportionalEntryCost;
+    }
+
+    // For closed trades, use actual amount (what was closed)
     const exitValue = trade.amount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
     return exitValue - trade.sumPlusFee;
   };
@@ -250,6 +286,147 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     (t) => t.status === TradeStatus.OPEN || t.status === TradeStatus.FILLED
   );
   const closedTrades = trades.filter((t) => t.status === TradeStatus.CLOSED);
+
+  // Group closed trades by parent
+  const groupedClosedTrades = useMemo(() => {
+    const groups: TradeGroup[] = [];
+    const processedIds = new Set<string>();
+
+    // First, find all partial closes and their parents
+    const partialCloses = closedTrades.filter(t => t.isPartialClose && t.parentTradeId);
+
+    // Group by parentTradeId
+    const parentMap = new Map<string, ITrade[]>();
+    partialCloses.forEach(part => {
+      if (!part.parentTradeId) return;
+
+      if (!parentMap.has(part.parentTradeId)) {
+        parentMap.set(part.parentTradeId, []);
+      }
+      parentMap.get(part.parentTradeId)!.push(part);
+    });
+
+    // Process each parent with its parts
+    parentMap.forEach((parts, parentId) => {
+      // Find parent trade
+      const parentTrade = closedTrades.find(t => t._id === parentId);
+      if (!parentTrade) return;
+
+      // Mark all as processed
+      processedIds.add(parentId);
+      parts.forEach(p => processedIds.add(p._id));
+
+      // All parts to calculate summary (including parent if it's closed with remaining amount)
+      const allParts = [...parts];
+
+      // If parent is closed and has remainingAmount, create virtual part for it
+      if (parentTrade.status === TradeStatus.CLOSED && parentTrade.remainingAmount) {
+        // Round to avoid floating point issues (0.999999... → 1.0)
+        const remainingAmount = Math.round(parentTrade.remainingAmount * 100000000) / 100000000;
+        const originalAmount = parentTrade.originalAmount ?? parentTrade.amount;
+
+        // Calculate PROPORTIONAL sumPlusFee for remaining amount
+        const proportion = remainingAmount / originalAmount;
+        const proportionalSumPlusFee = parentTrade.sumPlusFee * proportion;
+
+        // Create virtual part for parent's remaining close
+        const virtualPart: ITrade = {
+          ...parentTrade,
+          _id: parentTrade._id + '-remaining',
+          amount: remainingAmount,
+          sumPlusFee: proportionalSumPlusFee,  // ← PROPORTIONAL!
+          isPartialClose: true,
+          closedAmount: remainingAmount,
+        } as ITrade;
+
+        allParts.push(virtualPart);
+      }
+
+      // Calculate summary from ALL parts
+      const totalAmount = allParts.reduce((sum, p) => sum + p.amount, 0);
+      const totalValue = allParts.reduce((sum, p) => sum + (p.amount * (p.exitPrice || 0)), 0);
+      const avgExitPrice = totalAmount > 0 ? totalValue / totalAmount : 0;
+
+      const totalProfitUSD = allParts.reduce((sum, p) => {
+        const profit = calculateProfitUSD(p);
+        return sum + (profit || 0);
+      }, 0);
+
+      const totalProfitPercent = allParts.reduce((sum, p) => {
+        const percent = calculateProfitPercent(p);
+        return sum + (percent || 0);
+      }, 0) / allParts.length;
+
+      const closeDates = allParts
+        .map(p => p.closeDate)
+        .filter(d => d)
+        .map(d => new Date(d!));
+
+      const firstCloseDate = closeDates.length > 0
+        ? new Date(Math.min(...closeDates.map(d => d.getTime())))
+        : new Date();
+
+      const lastCloseDate = closeDates.length > 0
+        ? new Date(Math.max(...closeDates.map(d => d.getTime())))
+        : new Date();
+
+      groups.push({
+        type: 'multi',
+        mainTrade: parentTrade,
+        parts: allParts.sort((a, b) =>
+          (a.closeDate ? new Date(a.closeDate).getTime() : 0) -
+          (b.closeDate ? new Date(b.closeDate).getTime() : 0)
+        ),
+        summary: {
+          totalAmount,
+          avgExitPrice,
+          totalProfitPercent,
+          totalProfitUSD,
+          firstCloseDate,
+          lastCloseDate,
+        },
+      });
+    });
+
+    // Process remaining trades that are not partial closes and not parents
+    closedTrades.forEach((trade) => {
+      if (processedIds.has(trade._id)) return;
+
+      // If this is a partial close but parent not found (still in Open Trades),
+      // show it as a single-part multi group
+      if (trade.isPartialClose) {
+        processedIds.add(trade._id);
+
+        // Calculate summary for single part
+        const profitUSD = calculateProfitUSD(trade);
+        const profitPercent = calculateProfitPercent(trade);
+
+        groups.push({
+          type: 'multi',
+          mainTrade: trade,
+          parts: [trade],
+          summary: {
+            totalAmount: trade.amount,
+            avgExitPrice: trade.exitPrice || 0,
+            totalProfitPercent: profitPercent || 0,
+            totalProfitUSD: profitUSD || 0,
+            firstCloseDate: trade.closeDate ? new Date(trade.closeDate) : new Date(),
+            lastCloseDate: trade.closeDate ? new Date(trade.closeDate) : new Date(),
+          },
+        });
+      } else {
+        // This is a full close (no partial closes associated)
+        processedIds.add(trade._id);
+        groups.push({
+          type: 'full',
+          mainTrade: trade,
+          parts: [],
+        });
+      }
+    });
+
+    return groups;
+  }, [closedTrades]);
 
   if (isLoading) {
     return (
@@ -397,17 +574,20 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                         <TableHead className="min-w-[100px]">Date</TableHead>
                         <TableHead className="min-w-[90px]">Entry Price</TableHead>
                         <TableHead className="min-w-[90px]">Sum+Fee</TableHead>
-                        <TableHead className="min-w-[110px]">Amount (coins)</TableHead>
+                        <TableHead className="min-w-[110px]">Original</TableHead>
+                        <TableHead className="min-w-[110px]">Remaining</TableHead>
                         <TableHead className="min-w-[90px]">Exit Price</TableHead>
                         <TableHead className="min-w-[80px]">Profit %</TableHead>
                         <TableHead className="min-w-[80px]">Profit $</TableHead>
-                        <TableHead className="text-right min-w-[120px]">Actions</TableHead>
+                        <TableHead className="text-right min-w-[150px]">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {openTrades.map((trade) => {
                         const profitPercent = calculateProfitPercent(trade);
                         const profitUSD = calculateProfitUSD(trade);
+                        const originalAmount = trade.originalAmount ?? trade.amount;
+                        const remainingAmount = trade.remainingAmount ?? trade.amount;
 
                         return (
                           <TableRow key={trade._id}>
@@ -438,7 +618,19 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                             </TableCell>
                             <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
                             <TableCell>${trade.sumPlusFee.toFixed(2)}</TableCell>
-                            <TableCell>{trade.amount.toFixed(8)}</TableCell>
+                            <TableCell>
+                              {originalAmount.toFixed(8)}
+                            </TableCell>
+                            <TableCell>
+                              <span className={remainingAmount < originalAmount ? 'text-yellow-500 font-medium' : ''}>
+                                {remainingAmount.toFixed(8)}
+                              </span>
+                              {remainingAmount < originalAmount && (
+                                <span className="text-xs text-yellow-500/60 block">
+                                  ({((remainingAmount / originalAmount) * 100).toFixed(1)}% left)
+                                </span>
+                              )}
+                            </TableCell>
                             <TableCell>
                               {trade.exitPrice ? `$${formatPrice(trade.exitPrice)}` : '-'}
                             </TableCell>
@@ -489,17 +681,30 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                                   </>
                                 )}
                                 {trade.status === TradeStatus.FILLED && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                      setTradeToEdit(trade);
-                                      setShowEditExitPriceModal(true);
-                                    }}
-                                    title="Set Exit Price"
-                                  >
-                                    <DollarSign className="h-4 w-4" />
-                                  </Button>
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setTradeToEdit(trade);
+                                        setShowEditExitPriceModal(true);
+                                      }}
+                                      title="Set Exit Price"
+                                    >
+                                      <DollarSign className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setTradeToPartialClose(trade);
+                                        setShowPartialCloseModal(true);
+                                      }}
+                                      title="Partial Close"
+                                    >
+                                      <MinusCircle className="h-4 w-4 text-yellow-500" />
+                                    </Button>
+                                  </>
                                 )}
                                 <Button
                                   variant="ghost"
@@ -529,7 +734,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
               <CardTitle>Closed Trades</CardTitle>
             </CardHeader>
             <CardContent>
-              {closedTrades.length === 0 ? (
+              {groupedClosedTrades.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   No closed trades yet.
                 </div>
@@ -538,11 +743,12 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[60px]">Coin</TableHead>
+                        <TableHead className="min-w-[80px]">Coin</TableHead>
+                        <TableHead className="min-w-[80px]">Type</TableHead>
                         <TableHead className="min-w-[70px]">Status</TableHead>
                         <TableHead className="min-w-[90px]">Entry Price</TableHead>
                         <TableHead className="min-w-[90px]">Sum+Fee</TableHead>
-                        <TableHead className="min-w-[110px]">Amount (coins)</TableHead>
+                        <TableHead className="min-w-[110px]">Amount</TableHead>
                         <TableHead className="min-w-[90px]">Exit Price</TableHead>
                         <TableHead className="min-w-[80px]">Profit %</TableHead>
                         <TableHead className="min-w-[80px]">Profit $</TableHead>
@@ -551,57 +757,9 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {closedTrades.map((trade) => {
-                        const profitPercent = calculateProfitPercent(trade);
-                        const profitUSD = calculateProfitUSD(trade);
-
-                        return (
-                          <TableRow key={trade._id}>
-                            <TableCell className="font-medium">
-                              {trade.coinSymbol}
-                            </TableCell>
-                            <TableCell>{getStatusBadge(trade.status)}</TableCell>
-                            <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
-                            <TableCell>${trade.sumPlusFee.toFixed(2)}</TableCell>
-                            <TableCell>{trade.amount.toFixed(8)}</TableCell>
-                            <TableCell>
-                              {trade.exitPrice ? `$${formatPrice(trade.exitPrice)}` : '-'}
-                            </TableCell>
-                            <TableCell>
-                              {profitPercent !== null ? (
-                                <span className={profitPercent >= 0 ? 'text-green-500' : 'text-red-500'}>
-                                  {profitPercent >= 0 ? '+' : ''}{profitPercent.toFixed(2)}%
-                                </span>
-                              ) : (
-                                '-'
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {profitUSD !== null ? (
-                                <span className={profitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-                                  {profitUSD >= 0 ? '+' : ''}${profitUSD.toFixed(2)}
-                                </span>
-                              ) : (
-                                '-'
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {trade.filledDate ? new Date(trade.filledDate).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                              }) : '-'}
-                            </TableCell>
-                            <TableCell>
-                              {trade.closeDate ? new Date(trade.closeDate).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                              }) : '-'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {groupedClosedTrades.map((group, index) => (
+                        <GroupedClosedTradeRow key={group.mainTrade._id + '-' + index} group={group} />
+                      ))}
                     </TableBody>
                   </Table>
                 </div>
@@ -649,6 +807,15 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
         onOpenChange={setShowCloseTradeDialog}
         trade={tradeToClose}
         onSuccess={handleTradeUpdated}
+      />
+
+      <PartialCloseModal
+        open={showPartialCloseModal}
+        onOpenChange={setShowPartialCloseModal}
+        trade={tradeToPartialClose}
+        onSuccess={() => {
+          fetchTrades();
+        }}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

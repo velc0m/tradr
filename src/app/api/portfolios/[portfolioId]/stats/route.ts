@@ -140,31 +140,9 @@ export async function GET(
     }).sort({ closeDate: 1 });
 
     // Calculate profits for each closed trade
-    console.log('=== CALCULATING STATISTICS FOR CLOSED TRADES ===');
-    console.log('Total closed trades:', closedTrades.length);
-
-    const tradesWithProfit: TradeWithProfit[] = closedTrades.map((trade, index) => {
-      console.log(`\n==== TRADE ${index + 1}/${closedTrades.length} (ID: ${trade._id}) ====`);
-      console.log(`Coin: ${trade.coinSymbol}`);
-      console.log(`Entry Price: $${trade.entryPrice} | Exit Price: $${trade.exitPrice}`);
-      console.log(`Entry Fee: ${trade.entryFee}% | Exit Fee: ${trade.exitFee}%`);
-      console.log(`Amount: ${trade.amount} | Original: ${trade.originalAmount} | Remaining: ${trade.remainingAmount}`);
-      console.log(`Is Partial Close: ${trade.isPartialClose}`);
-      console.log(`SumPlusFee (Entry Cost): $${trade.sumPlusFee.toFixed(2)}`);
-
-      const profitUSD = calculateProfitUSD(trade, true); // Log details
+    const tradesWithProfit: TradeWithProfit[] = closedTrades.map((trade) => {
+      const profitUSD = calculateProfitUSD(trade);
       const profitPercent = calculateProfitPercent(trade);
-
-      const priceChangePercent = ((trade.exitPrice! / trade.entryPrice - 1) * 100);
-      console.log('\n  [Profit % Calculation]');
-      console.log(`  Price Change: ((${trade.exitPrice} / ${trade.entryPrice}) - 1) × 100 = ${priceChangePercent.toFixed(2)}%`);
-      console.log(`  Entry Fee: -${trade.entryFee}%`);
-      console.log(`  Exit Fee: -${trade.exitFee}%`);
-      console.log(`  Net Profit %: ${priceChangePercent.toFixed(2)}% - ${trade.entryFee}% - ${trade.exitFee}% = ${profitPercent.toFixed(2)}%`);
-
-      console.log(`\n  ✅ FINAL RESULTS:`);
-      console.log(`  → Profit USD: $${profitUSD.toFixed(2)}`);
-      console.log(`  → Profit %: ${profitPercent.toFixed(2)}%`);
 
       return {
         ...trade.toObject(),
@@ -179,20 +157,11 @@ export async function GET(
       0
     );
 
-    console.log('\n=== STATISTICS SUMMARY ===');
-    console.log('Individual Profit USD values:', tradesWithProfit.map(t => `$${t.profitUSD.toFixed(2)}`).join(' + '));
-    console.log(`Total Profit USD = ${tradesWithProfit.map(t => t.profitUSD.toFixed(2)).join(' + ')} = $${totalProfitUSD.toFixed(2)}`);
-
     const sumOfProfitPercents = tradesWithProfit.reduce((sum, trade) => sum + trade.profitPercent, 0);
     const avgProfitPercent =
       tradesWithProfit.length > 0
         ? sumOfProfitPercents / tradesWithProfit.length
         : 0;
-
-    console.log('\nAverage Profit % (total profit % average):');
-    console.log(`  Individual Profit %: ${tradesWithProfit.map(t => t.profitPercent.toFixed(2) + '%').join(', ')}`);
-    console.log(`  Formula: (${tradesWithProfit.map(t => t.profitPercent.toFixed(2)).join(' + ')}) / ${tradesWithProfit.length}`);
-    console.log(`  = ${sumOfProfitPercents.toFixed(2)} / ${tradesWithProfit.length} = ${avgProfitPercent.toFixed(2)}%`);
 
     // 2. Win Rate
     const profitableTrades = tradesWithProfit.filter((t) => t.profitUSD > 0);
@@ -201,15 +170,11 @@ export async function GET(
         ? (profitableTrades.length / tradesWithProfit.length) * 100
         : 0;
 
-    console.log('Win Rate:', `${profitableTrades.length}/${tradesWithProfit.length} = ${winRate.toFixed(2)}%`);
-
     // 3. Average Profit
     const avgProfitUSD =
       tradesWithProfit.length > 0
         ? totalProfitUSD / tradesWithProfit.length
         : 0;
-
-    console.log('Average Profit USD:', `$${totalProfitUSD.toFixed(2)} / ${tradesWithProfit.length} = $${avgProfitUSD.toFixed(2)}`);
 
     // 4. Total ROI
     const totalInvestment = tradesWithProfit.reduce(
@@ -218,12 +183,6 @@ export async function GET(
     );
     const totalROI =
       totalInvestment > 0 ? (totalProfitUSD / totalInvestment) * 100 : 0;
-
-    console.log('\nTotal ROI:');
-    console.log(`  Total Investment (sum of all sumPlusFee): $${totalInvestment.toFixed(2)}`);
-    console.log(`  Total Profit USD: $${totalProfitUSD.toFixed(2)}`);
-    console.log(`  Formula: (Total Profit / Total Investment) × 100`);
-    console.log(`  = ($${totalProfitUSD.toFixed(2)} / $${totalInvestment.toFixed(2)}) × 100 = ${totalROI.toFixed(2)}%`);
 
     // 5. Total Trades by Status
     const openTrades = allTrades.filter((t) => t.status === TradeStatus.OPEN);
@@ -245,9 +204,6 @@ export async function GET(
       );
       bestTrade = { trade: sortedByProfitUSD[0] };
       worstTrade = { trade: sortedByProfitUSD[sortedByProfitUSD.length - 1] };
-
-      console.log('Best Trade:', `${bestTrade.trade.coinSymbol} - $${bestTrade.trade.profitUSD.toFixed(2)}`);
-      console.log('Worst Trade:', `${worstTrade.trade.coinSymbol} - $${worstTrade.trade.profitUSD.toFixed(2)}`);
     }
 
     // 7. Performance by Coin
@@ -346,14 +302,6 @@ export async function GET(
       topLosingTrades,
       cumulativeProfit,
     };
-
-    console.log('\n=== FINAL STATISTICS ===');
-    console.log(`Total Profit: $${totalProfitUSD.toFixed(2)}`);
-    console.log(`Win Rate: ${winRate.toFixed(2)}%`);
-    console.log(`Average Profit: $${avgProfitUSD.toFixed(2)}`);
-    console.log(`Total ROI: ${totalROI.toFixed(2)}%`);
-    console.log(`Total Trades: ${totalTrades.open} open, ${totalTrades.filled} filled, ${totalTrades.closed} closed`);
-    console.log('=== END STATISTICS CALCULATION ===\n');
 
     return NextResponse.json({
       success: true,

@@ -48,13 +48,6 @@ export function MarkAsFilledDialog({
     setIsLoading(true);
 
     try {
-      console.log('=== MARK AS FILLED - CLIENT ===');
-      console.log('Sending filledDate:', filledDate);
-      console.log('Full body:', {
-        status: TradeStatus.FILLED,
-        filledDate: filledDate,
-      });
-
       const response = await fetch(`/api/trades/${trade._id}`, {
         method: 'PUT',
         headers: {

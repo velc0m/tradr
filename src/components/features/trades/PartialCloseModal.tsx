@@ -164,18 +164,6 @@ export function PartialCloseModal({
 
     setIsLoading(true);
 
-    console.log('========================================');
-    console.log('🚀 CALLING PARTIAL CLOSE API');
-    console.log('Trade ID:', trade._id);
-    console.log('URL:', `/api/trades/${trade._id}/partial-close`);
-    console.log('Data:', {
-      amountToClose: closeAmount,
-      exitPrice: exit,
-      exitFee: fee,
-      closeDate: closeDate,
-    });
-    console.log('========================================');
-
     try {
       const response = await fetch(`/api/trades/${trade._id}/partial-close`, {
         method: 'POST',
@@ -189,9 +177,6 @@ export function PartialCloseModal({
           closeDate: closeDate,
         }),
       });
-
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response OK:', response.ok);
 
       const data = await response.json();
 

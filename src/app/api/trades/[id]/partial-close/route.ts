@@ -28,15 +28,10 @@ export async function POST(
   request: NextRequest,
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse>> {
-  console.log('========================================');
-  console.log('🔥 PARTIAL CLOSE ENDPOINT CALLED! 🔥');
-  console.log('========================================');
-
   try {
     const session = await getServerSession(authOptions);
 
     if (!session?.user?.id) {
-      console.log('❌ Unauthorized - no session');
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -44,10 +39,8 @@ export async function POST(
     }
 
     const { id } = await params;
-    console.log('📝 Trade ID:', id);
 
     const body: PartialCloseInput = await request.json();
-    console.log('📦 Request body:', body);
 
     // Validate input
     const validatedData = partialCloseSchema.parse(body);
@@ -86,14 +79,6 @@ export async function POST(
     const currentRemaining = parentTrade.remainingAmount ?? parentTrade.amount;
     const currentOriginal = parentTrade.originalAmount ?? parentTrade.amount;
 
-    console.log('=== PARTIAL CLOSE DEBUG ===');
-    console.log('Before partial close:', {
-      tradeId: parentTrade._id,
-      originalAmount: currentOriginal,
-      remainingAmount: currentRemaining,
-      amountToClose: validatedData.amountToClose,
-    });
-
     // Validate amount to close
     if (validatedData.amountToClose > currentRemaining) {
       return NextResponse.json(
@@ -116,21 +101,10 @@ export async function POST(
     const rawRemaining = currentRemaining - validatedData.amountToClose;
     const newRemainingAmount = Math.round(rawRemaining * 100000000) / 100000000;
 
-    console.log('Calculated new remaining:', {
-      rawRemaining,
-      newRemainingAmount,
-      willFullyClose: newRemainingAmount <= 0.00000001,
-    });
-
     // Calculate proportional values for the closed portion
     // ALWAYS use originalAmount as base, NOT remainingAmount!
     const proportion = validatedData.amountToClose / currentOriginal;
     const proportionalSumPlusFee = parentTrade.sumPlusFee * proportion;
-
-    console.log('Proportion calculation:', {
-      proportion,
-      proportionalSumPlusFee,
-    });
 
     // Create closed trade record
     const closedTrade = new Trade({
@@ -155,16 +129,9 @@ export async function POST(
     });
 
     await closedTrade.save();
-    console.log('Closed trade created:', closedTrade._id);
 
     // Check if remaining amount is essentially zero (floating point precision)
     const isFullyClosed = newRemainingAmount <= 0.00000001;
-
-    console.log('Will fully close?', {
-      newRemainingAmount,
-      isFullyClosed,
-      threshold: 0.00000001,
-    });
 
     // Build update object with $set operator
     const updateFields: Record<string, unknown> = {
@@ -180,18 +147,13 @@ export async function POST(
     if (isFullyClosed) {
       updateFields.status = TradeStatus.CLOSED;
       updateFields.closeDate = new Date(validatedData.closeDate + 'T00:00:00');
-      console.log('Fully closing parent trade');
     }
-
-    console.log('Updating parent trade with $set:', updateFields);
 
     // CRITICAL: Direct MongoDB update for reliability
     await Trade.collection.updateOne(
       { _id: parentTrade._id },
       { $set: updateFields }
     );
-
-    console.log('MongoDB update complete, fetching fresh document...');
 
     // Fetch fresh document to verify update
     const updatedParentTrade = await Trade.findById(id).lean();
@@ -202,14 +164,6 @@ export async function POST(
         { status: 500 }
       );
     }
-
-    console.log('Parent trade after update (fresh from DB):', {
-      _id: updatedParentTrade._id,
-      originalAmount: updatedParentTrade.originalAmount,
-      remainingAmount: updatedParentTrade.remainingAmount,
-      status: updatedParentTrade.status,
-    });
-    console.log('=== END PARTIAL CLOSE DEBUG ===');
 
     return NextResponse.json({
       success: true,

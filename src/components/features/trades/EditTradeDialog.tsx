@@ -185,13 +185,6 @@ export function EditTradeDialog({
         throw new Error(data.error || 'Failed to update trade');
       }
 
-      console.log('=== TRADE UPDATE RESPONSE ===');
-      console.log('Response data:', data.data);
-      console.log('Updated amount:', data.data?.amount);
-      console.log('Updated originalAmount:', data.data?.originalAmount);
-      console.log('Updated remainingAmount:', data.data?.remainingAmount);
-      console.log('=== END UPDATE RESPONSE ===');
-
       toast({
         title: 'Success',
         description: 'Trade updated successfully',
@@ -199,7 +192,6 @@ export function EditTradeDialog({
 
       // Call success callback BEFORE closing modal
       if (onSuccess && data.data) {
-        console.log('Calling onSuccess callback with updated trade');
         onSuccess(data.data);
       }
 

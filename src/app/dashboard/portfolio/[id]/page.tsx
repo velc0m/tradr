@@ -124,19 +124,6 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
       const data = await response.json();
 
       if (data.success && data.data) {
-        console.log('=== FETCHED TRADES ===');
-        console.log('Total trades:', data.data.length);
-        data.data.forEach((trade: ITrade) => {
-          console.log(`Trade ${trade._id}:`, {
-            coinSymbol: trade.coinSymbol,
-            status: trade.status,
-            originalAmount: trade.originalAmount,
-            remainingAmount: trade.remainingAmount,
-            isPartialClose: trade.isPartialClose,
-            parentTradeId: trade.parentTradeId,
-          });
-        });
-        console.log('=== END FETCHED TRADES ===');
         setTrades(data.data);
       }
     } catch (error) {
@@ -175,25 +162,13 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   };
 
   const handleTradeUpdated = (updatedTrade: ITrade) => {
-    console.log('=== HANDLE TRADE UPDATED ===');
-    console.log('Updated trade received:', updatedTrade);
-    console.log('Trade ID:', updatedTrade._id);
-    console.log('Updated amount:', updatedTrade.amount);
-    console.log('Updated originalAmount:', updatedTrade.originalAmount);
-    console.log('Updated remainingAmount:', updatedTrade.remainingAmount);
-    console.log('Current trades count:', trades.length);
-
     const newTrades = trades.map((t) => (t._id === updatedTrade._id ? updatedTrade : t));
-    console.log('New trades array created, count:', newTrades.length);
     setTrades(newTrades);
 
     // If trade was closed, update Quick Stats
     if (updatedTrade.status === TradeStatus.CLOSED) {
-      console.log('Trade was closed, refreshing Quick Stats...');
       fetchQuickStats();
     }
-
-    console.log('=== END HANDLE TRADE UPDATED ===');
   };
 
 
@@ -291,31 +266,6 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
       const exitValue = remainingAmount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
 
       const profitUSD = exitValue - proportionalEntryCost;
-
-      // Detailed logging for debugging
-      if (trade.coinSymbol === 'BTC') {
-        console.log(`=== ${trade.coinSymbol} Trade Profit Calculation ===`);
-        console.log('Trade ID:', trade._id);
-        console.log('Entry Price: $' + trade.entryPrice);
-        console.log('Exit Price: $' + trade.exitPrice);
-        console.log('Amount (from DB): ' + trade.amount);
-        console.log('Original Amount: ' + originalAmount);
-        console.log('Remaining Amount: ' + remainingAmount);
-        console.log('Entry Fee: ' + trade.entryFee + '%');
-        console.log('Exit Fee: ' + (trade.exitFee || 0) + '%');
-        console.log('Sum+Fee (Entry Cost): $' + trade.sumPlusFee.toFixed(2));
-        console.log('');
-        console.log('Calculation:');
-        console.log('Proportion: ' + remainingAmount + ' / ' + originalAmount + ' = ' + proportion);
-        console.log('Proportional Entry Cost: $' + trade.sumPlusFee + ' × ' + proportion + ' = $' + proportionalEntryCost.toFixed(2));
-        console.log('');
-        console.log('Gross Exit Value: ' + remainingAmount + ' × $' + trade.exitPrice + ' = $' + (remainingAmount * trade.exitPrice).toFixed(2));
-        console.log('Exit Fee Multiplier: (100 - ' + (trade.exitFee || 0) + ') / 100 = ' + ((100 - (trade.exitFee || 0)) / 100));
-        console.log('Net Exit Value: $' + (remainingAmount * trade.exitPrice).toFixed(2) + ' × ' + ((100 - (trade.exitFee || 0)) / 100) + ' = $' + exitValue.toFixed(2));
-        console.log('');
-        console.log('Profit USD: $' + exitValue.toFixed(2) + ' - $' + proportionalEntryCost.toFixed(2) + ' = $' + profitUSD.toFixed(2));
-        console.log('=== END CALCULATION ===');
-      }
 
       return profitUSD;
     }

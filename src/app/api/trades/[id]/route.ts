@@ -49,17 +49,8 @@ export async function PUT(
     const { id } = await params;
     const body: UpdateTradeInput = await request.json();
 
-    console.log('=== UPDATE TRADE DEBUG ===');
-    console.log('Received body:', body);
-    console.log('filledDate in body:', body.filledDate);
-    console.log('closeDate in body:', body.closeDate);
-
     // Validate input
     const validatedData = updateTradeSchema.parse(body);
-
-    console.log('After validation:');
-    console.log('validatedData.filledDate:', validatedData.filledDate);
-    console.log('validatedData.closeDate:', validatedData.closeDate);
 
     await connectDB();
 
@@ -132,13 +123,11 @@ export async function PUT(
 
     if (validatedData.filledDate !== undefined && validatedData.filledDate !== '') {
       const filledDate = new Date(validatedData.filledDate + 'T00:00:00');
-      console.log('Setting filledDate to:', filledDate);
       trade.filledDate = filledDate;
     }
 
     if (validatedData.closeDate !== undefined && validatedData.closeDate !== '') {
       const closeDate = new Date(validatedData.closeDate + 'T00:00:00');
-      console.log('Setting closeDate to:', closeDate);
       trade.closeDate = closeDate;
     }
 
@@ -160,14 +149,7 @@ export async function PUT(
       trade.openDate = openDate;
     }
 
-    console.log('Before save - trade.filledDate:', trade.filledDate);
-    console.log('Before save - trade.closeDate:', trade.closeDate);
-
     await trade.save();
-
-    console.log('After save - trade.filledDate:', trade.filledDate);
-    console.log('After save - trade.closeDate:', trade.closeDate);
-    console.log('=== END DEBUG ===');
 
     return NextResponse.json({
       success: true,

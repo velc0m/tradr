@@ -8,6 +8,7 @@ import { CreatePortfolioModal } from './CreatePortfolioModal';
 import { IPortfolio } from '@/types';
 import { Plus } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { BlurredAmount } from '@/components/ui/BlurredAmount';
 
 export function PortfolioList() {
   const [portfolios, setPortfolios] = useState<IPortfolio[]>([]);
@@ -100,10 +101,7 @@ export function PortfolioList() {
                       Total Deposit
                     </div>
                     <div className="text-2xl font-bold">
-                      ${portfolio.totalDeposit.toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      <BlurredAmount amount={portfolio.totalDeposit} />
                     </div>
                   </div>
 

@@ -5,6 +5,7 @@ import { TableCell, TableRow } from '@/components/ui/table';
 import { ITrade, TradeStatus } from '@/types';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BlurredAmount } from '@/components/ui/BlurredAmount';
 
 export interface TradeGroup {
   type: 'full' | 'multi';
@@ -62,7 +63,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
           </span>
         </TableCell>
         <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
-        <TableCell>${trade.sumPlusFee.toFixed(2)}</TableCell>
+        <TableCell><BlurredAmount amount={trade.sumPlusFee} /></TableCell>
         <TableCell>{trade.amount.toFixed(8)}</TableCell>
         <TableCell>
           {trade.exitPrice ? `$${formatPrice(trade.exitPrice)}` : '-'}
@@ -77,7 +78,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
         <TableCell>
           {profitUSD !== null ? (
             <span className={profitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-              {profitUSD >= 0 ? '+' : ''}${profitUSD.toFixed(2)}
+              <BlurredAmount amount={profitUSD} showSign={true} />
             </span>
           ) : '-'}
         </TableCell>
@@ -136,7 +137,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
           </span>
         </TableCell>
         <TableCell>${formatPrice(group.mainTrade.entryPrice)}</TableCell>
-        <TableCell>${group.mainTrade.sumPlusFee.toFixed(2)}</TableCell>
+        <TableCell><BlurredAmount amount={group.mainTrade.sumPlusFee} /></TableCell>
         <TableCell>{summary.totalAmount.toFixed(8)}</TableCell>
         <TableCell>${formatPrice(summary.avgExitPrice)}</TableCell>
         <TableCell>
@@ -146,7 +147,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
         </TableCell>
         <TableCell>
           <span className={summary.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-            {summary.totalProfitUSD >= 0 ? '+' : ''}${summary.totalProfitUSD.toFixed(2)}
+            <BlurredAmount amount={summary.totalProfitUSD} showSign={true} />
           </span>
         </TableCell>
         <TableCell>{formatDate(group.mainTrade.filledDate)}</TableCell>
@@ -175,7 +176,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
             <TableCell>-</TableCell>
             <TableCell className="text-xs text-muted-foreground">-</TableCell>
             <TableCell className="text-xs text-muted-foreground">
-              ${part.sumPlusFee.toFixed(2)}
+              <BlurredAmount amount={part.sumPlusFee} />
             </TableCell>
             <TableCell className="text-sm">{part.amount.toFixed(8)}</TableCell>
             <TableCell className="text-sm">
@@ -191,7 +192,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
             <TableCell className="text-sm">
               {partProfitUSD !== null ? (
                 <span className={partProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-                  {partProfitUSD >= 0 ? '+' : ''}${partProfitUSD.toFixed(2)}
+                  <BlurredAmount amount={partProfitUSD} showSign={true} />
                 </span>
               ) : '-'}
             </TableCell>

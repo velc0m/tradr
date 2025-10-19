@@ -35,7 +35,9 @@ import { PartialCloseModal } from '@/components/features/trades/PartialCloseModa
 import { GroupedClosedTradeRow, TradeGroup } from '@/components/features/trades/GroupedClosedTradeRow';
 import { useToast } from '@/components/ui/use-toast';
 import { IPortfolio, ITrade, TradeStatus } from '@/types';
-import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3, Pencil, Download } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3, Pencil, Download, Eye, EyeOff } from 'lucide-react';
+import { useBlur } from '@/contexts/BlurContext';
+import { BlurredAmount } from '@/components/ui/BlurredAmount';
 
 interface PortfolioPageProps {
   params: {
@@ -46,6 +48,7 @@ interface PortfolioPageProps {
 export default function PortfolioPage({ params }: PortfolioPageProps) {
   const { status } = useSession();
   const router = useRouter();
+  const { isBlurred, toggleBlur } = useBlur();
   const [portfolio, setPortfolio] = useState<IPortfolio | null>(null);
   const [trades, setTrades] = useState<ITrade[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -498,6 +501,14 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
               <p className="text-muted-foreground mt-1">Portfolio details</p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={toggleBlur}
+                title={isBlurred ? 'Show amounts' : 'Hide amounts'}
+              >
+                {isBlurred ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
               <Button variant="outline" onClick={() => setShowExportDialog(true)}>
                 <Download className="h-4 w-4 mr-2" />
                 Export
@@ -524,10 +535,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                     Total Deposit
                   </div>
                   <div className="text-3xl font-bold">
-                    ${portfolio.totalDeposit.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    <BlurredAmount amount={portfolio.totalDeposit} />
                   </div>
                 </div>
                 <div>
@@ -554,28 +562,56 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                   {portfolio.coins.map((coin, index) => {
                     const allocation =
                       (portfolio.totalDeposit * coin.percentage) / 100;
+
+                    // Calculate used amount from open/filled trades
+                    const coinOpenTrades = openTrades.filter(t => t.coinSymbol === coin.symbol);
+                    const usedAmount = coinOpenTrades.reduce((sum, trade) => sum + trade.sumPlusFee, 0);
+                    const usedPercent = allocation > 0 ? (usedAmount / allocation) * 100 : 0;
+                    const availablePercent = 100 - usedPercent;
+
                     return (
                       <div
                         key={index}
-                        className="flex justify-between items-center p-3 rounded-lg bg-muted/50"
+                        className="p-3 rounded-lg bg-muted/50 space-y-2"
                       >
-                        <div>
-                          <div className="font-semibold">{coin.symbol}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {coin.percentage}% allocation
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="font-semibold">{coin.symbol}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {coin.percentage}% allocation
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-medium">
+                              <BlurredAmount amount={allocation} />
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {coin.decimalPlaces} decimal places
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="font-medium">
-                            ${allocation.toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
+                        {usedPercent > 0 && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">
+                                Used in open trades: {usedPercent.toFixed(1)}%
+                              </span>
+                              <span className="text-muted-foreground">
+                                Available: {availablePercent.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-full transition-all ${
+                                  usedPercent > 100 ? 'bg-red-500' :
+                                  usedPercent > 80 ? 'bg-yellow-500' :
+                                  'bg-green-500'
+                                }`}
+                                style={{ width: `${Math.min(usedPercent, 100)}%` }}
+                              />
+                            </div>
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {coin.decimalPlaces} decimal places
-                          </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
@@ -604,10 +640,10 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                         Overall P/L
                       </div>
                       <div className={`text-2xl font-bold ${quickStats.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {quickStats.totalProfitUSD >= 0 ? '+' : ''}${quickStats.totalProfitUSD.toLocaleString('en-US', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        <BlurredAmount
+                          amount={quickStats.totalProfitUSD}
+                          showSign={true}
+                        />
                       </div>
                     </div>
                     <div>
@@ -698,7 +734,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                               ) : '-'}
                             </TableCell>
                             <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
-                            <TableCell>${trade.sumPlusFee.toFixed(2)}</TableCell>
+                            <TableCell><BlurredAmount amount={trade.sumPlusFee} /></TableCell>
                             <TableCell>
                               {formatAmount(originalAmount)}
                             </TableCell>
@@ -727,7 +763,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                             <TableCell>
                               {profitUSD !== null ? (
                                 <span className={profitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-                                  {profitUSD >= 0 ? '+' : ''}${profitUSD.toFixed(2)}
+                                  <BlurredAmount amount={profitUSD} showSign={true} />
                                 </span>
                               ) : (
                                 '-'

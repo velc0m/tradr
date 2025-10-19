@@ -183,3 +183,13 @@ export interface ExportOptions {
   format: ExportFormat;
   include: ExportInclude[];
 }
+
+// User Settings types
+export interface IUserSettings extends Document {
+  _id: string;
+  userId: string;
+  feeCalculationMode: 'per-portfolio' | 'combined';
+  combinedPortfolios: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}

@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { EditPortfolioModal } from '@/components/features/portfolios/EditPortfolioModal';
+import { ExportPortfolioDialog } from '@/components/features/portfolios/ExportPortfolioDialog';
 import { CreateTradeModal } from '@/components/features/trades/CreateTradeModal';
 import { EditTradeDialog } from '@/components/features/trades/EditTradeDialog';
 import { EditExitPriceModal } from '@/components/features/trades/EditExitPriceModal';
@@ -34,7 +35,7 @@ import { PartialCloseModal } from '@/components/features/trades/PartialCloseModa
 import { GroupedClosedTradeRow, TradeGroup } from '@/components/features/trades/GroupedClosedTradeRow';
 import { useToast } from '@/components/ui/use-toast';
 import { IPortfolio, ITrade, TradeStatus } from '@/types';
-import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3, Pencil } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3, Pencil, Download } from 'lucide-react';
 
 interface PortfolioPageProps {
   params: {
@@ -54,6 +55,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     winRate: number;
   } | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [showCreateTradeModal, setShowCreateTradeModal] = useState(false);
   const [showEditTradeDialog, setShowEditTradeDialog] = useState(false);
   const [showEditExitPriceModal, setShowEditExitPriceModal] = useState(false);
@@ -546,6 +548,10 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
               <p className="text-muted-foreground mt-1">Portfolio details</p>
             </div>
             <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
               <Button variant="outline" onClick={() => setShowEditModal(true)}>
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
@@ -913,6 +919,12 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
             onOpenChange={setShowEditModal}
             portfolio={portfolio}
             onSuccess={handlePortfolioUpdated}
+          />
+          <ExportPortfolioDialog
+            open={showExportDialog}
+            onOpenChange={setShowExportDialog}
+            portfolioId={params.id}
+            portfolioName={portfolio.name}
           />
           <CreateTradeModal
             open={showCreateTradeModal}

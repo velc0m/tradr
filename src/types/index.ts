@@ -174,3 +174,12 @@ export interface PortfolioStatistics {
   topLosingTrades: TradeWithProfit[];
   cumulativeProfit: CumulativeProfitPoint[];
 }
+
+// Export types
+export type ExportFormat = 'xlsx' | 'csv';
+export type ExportInclude = 'all' | 'open' | 'closed' | 'portfolio';
+
+export interface ExportOptions {
+  format: ExportFormat;
+  include: ExportInclude[];
+}

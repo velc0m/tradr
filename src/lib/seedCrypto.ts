@@ -39,7 +39,6 @@ export async function seedCryptocurrencies(): Promise<void> {
     });
 
     if (existingCount >= DEFAULT_CRYPTOCURRENCIES.length) {
-      console.log('Default cryptocurrencies already seeded');
       return;
     }
 
@@ -58,11 +57,8 @@ export async function seedCryptocurrencies(): Promise<void> {
           isDefault: true,
           userId: null,
         });
-        console.log(`Created default cryptocurrency: ${crypto.symbol}`);
       }
     }
-
-    console.log('Default cryptocurrencies seeding completed');
   } catch (error) {
     console.error('Error seeding cryptocurrencies:', error);
     throw error;

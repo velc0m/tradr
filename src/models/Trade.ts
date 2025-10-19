@@ -58,6 +58,26 @@ const TradeSchema = new Schema<ITrade>(
       required: [true, 'Amount is required'],
       min: [0, 'Amount cannot be negative'],
     },
+    originalAmount: {
+      type: Number,
+      min: [0, 'Original amount cannot be negative'],
+    },
+    remainingAmount: {
+      type: Number,
+      min: [0, 'Remaining amount cannot be negative'],
+    },
+    isPartialClose: {
+      type: Boolean,
+      default: false,
+    },
+    parentTradeId: {
+      type: String,
+      ref: 'Trade',
+    },
+    closedAmount: {
+      type: Number,
+      min: [0, 'Closed amount cannot be negative'],
+    },
     openDate: {
       type: Date,
       required: [true, 'Open date is required'],

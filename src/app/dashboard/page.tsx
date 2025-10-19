@@ -58,6 +58,9 @@ export default function DashboardPage() {
               <Link href="/dashboard/cryptocurrencies" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Cryptocurrencies
               </Link>
+              <Link href="/dashboard/settings" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Settings
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-4">

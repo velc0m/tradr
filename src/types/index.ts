@@ -56,6 +56,11 @@ export interface ITrade extends Document {
   exitPrice?: number;
   exitFee?: number;
   amount: number; // Amount in coins (manual input from exchange)
+  originalAmount?: number; // Initial amount of coins when trade was created
+  remainingAmount?: number; // Remaining amount of coins not yet sold
+  isPartialClose?: boolean; // True if this is a partial close record
+  parentTradeId?: string; // Reference to parent trade for partial closes
+  closedAmount?: number; // Amount of coins closed in this partial close
   openDate: Date;
   filledDate?: Date; // Date when trade was filled on exchange
   closeDate?: Date;
@@ -110,4 +115,81 @@ export interface UpdateTradeInput {
 export interface UpdateExitPriceInput {
   exitPrice: number;
   exitFee: number;
+}
+
+export interface PartialCloseInput {
+  amountToClose: number;
+  exitPrice: number;
+  exitFee: number;
+  closeDate: string;
+}
+
+// Portfolio Statistics types
+export interface TradeWithProfit extends ITrade {
+  profitUSD: number;
+  profitPercent: number;
+}
+
+export interface CoinPerformance {
+  coinSymbol: string;
+  tradesCount: number;
+  winRate: number;
+  totalProfitUSD: number;
+  avgProfitPercent: number;
+  bestTrade: {
+    profitUSD: number;
+    profitPercent: number;
+  } | null;
+  worstTrade: {
+    profitUSD: number;
+    profitPercent: number;
+  } | null;
+}
+
+export interface CumulativeProfitPoint {
+  date: string;
+  profit: number;
+}
+
+export interface PortfolioStatistics {
+  totalProfitUSD: number;
+  totalProfitPercent: number;
+  winRate: number;
+  avgProfitUSD: number;
+  avgProfitPercent: number;
+  totalROI: number;
+  totalTrades: {
+    open: number;
+    filled: number;
+    closed: number;
+  };
+  bestTrade: {
+    trade: TradeWithProfit;
+  } | null;
+  worstTrade: {
+    trade: TradeWithProfit;
+  } | null;
+  performanceByCoin: CoinPerformance[];
+  topProfitableTrades: TradeWithProfit[];
+  topLosingTrades: TradeWithProfit[];
+  cumulativeProfit: CumulativeProfitPoint[];
+}
+
+// Export types
+export type ExportFormat = 'xlsx' | 'csv';
+export type ExportInclude = 'all' | 'open' | 'closed' | 'portfolio';
+
+export interface ExportOptions {
+  format: ExportFormat;
+  include: ExportInclude[];
+}
+
+// User Settings types
+export interface IUserSettings extends Document {
+  _id: string;
+  userId: string;
+  feeCalculationMode: 'per-portfolio' | 'combined';
+  combinedPortfolios: string[];
+  createdAt: Date;
+  updatedAt: Date;
 }

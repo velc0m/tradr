@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Trade from '@/models/Trade';
 import Portfolio from '@/models/Portfolio';
-import { ApiResponse, UpdateTradeInput, TradeStatus } from '@/types';
+import { ApiResponse, UpdateTradeInput, TradeStatus, TradeType } from '@/types';
 import { z } from 'zod';
 
 interface RouteParams {
@@ -90,11 +90,59 @@ export async function PUT(
 
     // Update trade fields
     if (validatedData.status !== undefined) {
+      const wasNotClosed = trade.status !== TradeStatus.CLOSED;
+      const isNowClosed = validatedData.status === TradeStatus.CLOSED;
+
       trade.status = validatedData.status;
 
       // If status changed to closed, set closeDate
-      if (validatedData.status === TradeStatus.CLOSED && !trade.closeDate) {
+      if (isNowClosed && !trade.closeDate) {
         trade.closeDate = new Date();
+      }
+
+      // If SHORT trade is being closed, update parent LONG trade
+      if (wasNotClosed && isNowClosed && trade.tradeType === TradeType.SHORT && trade.parentTradeId) {
+        // Must have exitPrice to close
+        if (!trade.exitPrice) {
+          return NextResponse.json(
+            { success: false, error: 'Cannot close SHORT trade without exit price' },
+            { status: 400 }
+          );
+        }
+
+        // Find parent LONG trade
+        const parentTrade = await Trade.findById(trade.parentTradeId);
+
+        if (parentTrade && parentTrade.tradeType === TradeType.LONG) {
+          // Calculate profit in coins for SHORT
+          // IMPORTANT: sumPlusFee is now GROSS amount (before entry fee deduction)
+          const shortAmount = trade.remainingAmount ?? trade.amount;
+          const originalAmount = trade.originalAmount ?? trade.amount;
+          const proportion = shortAmount / originalAmount;
+          const proportionalGrossAmount = trade.sumPlusFee * proportion;
+
+          // Calculate net received after entry fee (sale fee)
+          const entryFeeVal = trade.entryFee ?? 0;
+          const netReceived = proportionalGrossAmount * (100 - entryFeeVal) / 100;
+
+          // Calculate buy back cost with exit fee
+          const exitFeeVal = trade.exitFee ?? 0;
+          const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
+
+          // Calculate coins bought back from net received
+          const coinsBoughtBack = netReceived / buyBackPriceWithFee;
+          const profitCoins = coinsBoughtBack - shortAmount;
+
+          // Update parent LONG trade
+          const newAmount = (parentTrade.remainingAmount ?? parentTrade.amount) + coinsBoughtBack;
+          const newEntryPrice = parentTrade.sumPlusFee / newAmount;
+
+          parentTrade.remainingAmount = newAmount;
+          parentTrade.entryPrice = newEntryPrice;
+          // Do NOT update initialEntryPrice or initialAmount!
+
+          await parentTrade.save();
+        }
       }
     }
 

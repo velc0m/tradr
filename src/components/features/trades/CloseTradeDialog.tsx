@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { ITrade, TradeStatus } from '@/types';
+import { ITrade, TradeStatus, TradeType } from '@/types';
 
 interface CloseTradeDialogProps {
   open: boolean;
@@ -29,6 +29,8 @@ export function CloseTradeDialog({
   onSuccess,
 }: CloseTradeDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [exitFee, setExitFee] = useState('0.6');
+  const [feeLevel, setFeeLevel] = useState('');
 
   // Get today's date in local timezone (not UTC)
   const getLocalDateString = () => {
@@ -42,13 +44,49 @@ export function CloseTradeDialog({
   const [closeDate, setCloseDate] = useState(getLocalDateString());
   const { toast } = useToast();
 
+  // Fetch exit fee when modal opens
+  useEffect(() => {
+    if (open && trade) {
+      fetchExitFee();
+    }
+  }, [open, trade]);
+
+  const fetchExitFee = async () => {
+    if (!trade) return;
+
+    try {
+      // Always fetch current fee from API to show current tier
+      const response = await fetch(
+        `/api/portfolios/${trade.portfolioId}/calculate-fee?type=exit&includeTradeId=${trade._id}`
+      );
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        setFeeLevel(data.data.level);
+
+        // If exitFee is already set (from Set Exit Price), use it
+        // Otherwise use current fee from API
+        if (trade.exitFee !== undefined && trade.exitFee !== null) {
+          setExitFee(trade.exitFee.toFixed(3));
+        } else {
+          setExitFee(data.data.feePercent.toFixed(3));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch exit fee:', error);
+      // Use saved exitFee or entryFee as fallback
+      setExitFee((trade.exitFee || trade.entryFee || 0.6).toString());
+    }
+  };
+
   const handleConfirm = async () => {
     if (!trade) return;
 
     if (!trade.exitPrice) {
+      const priceLabel = trade.tradeType === TradeType.SHORT ? 'Buy Back Price' : 'Exit Price';
       toast({
         title: 'Error',
-        description: 'Cannot close trade without Exit Price. Please set Exit Price first.',
+        description: `Cannot close trade without ${priceLabel}. Please set ${priceLabel} first.`,
         variant: 'destructive',
       });
       onOpenChange(false);
@@ -66,6 +104,7 @@ export function CloseTradeDialog({
         body: JSON.stringify({
           status: TradeStatus.CLOSED,
           closeDate: closeDate,
+          exitFee: parseFloat(exitFee), // Update exit fee on close
         }),
       });
 
@@ -117,6 +156,40 @@ export function CloseTradeDialog({
               disabled={isLoading}
             />
           </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="exitFee">
+              Exit Fee (%)
+              {feeLevel && (
+                <span className="text-xs text-muted-foreground ml-2">
+                  ({feeLevel})
+                </span>
+              )}
+            </Label>
+            <Input
+              id="exitFee"
+              type="number"
+              step="0.001"
+              placeholder="0.25"
+              value={exitFee}
+              onChange={(e) => setExitFee(e.target.value)}
+              disabled={isLoading}
+            />
+            <p className="text-xs text-muted-foreground">
+              Current fee based on your 30-day trading volume. You can edit if needed.
+            </p>
+          </div>
+
+          {trade && trade.exitPrice && (
+            <div className="grid gap-2 p-3 rounded-lg bg-muted/50">
+              <div className="text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Exit Price:</span>
+                  <span className="font-medium">${trade.exitPrice}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button

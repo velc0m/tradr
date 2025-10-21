@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { ITrade } from '@/types';
+import { ITrade, TradeType } from '@/types';
 
 interface PartialCloseModalProps {
   open: boolean;
@@ -63,9 +63,9 @@ export function PartialCloseModal({
     if (!trade) return;
 
     try {
-      // For exit fee: include all filled trades
+      // For exit fee: include current trade in volume (since portion will be closed)
       const response = await fetch(
-        `/api/portfolios/${trade.portfolioId}/calculate-fee?type=exit`
+        `/api/portfolios/${trade.portfolioId}/calculate-fee?type=exit&includeTradeId=${trade._id}`
       );
       const data = await response.json();
 
@@ -94,26 +94,54 @@ export function PartialCloseModal({
     const fee = parseFloat(exitFee) || 0;
 
     if (closeAmount <= 0 || exit <= 0) {
-      return { sumPlusFee: 0, profitPercent: 0, profitUSD: 0 };
+      return {
+        sumPlusFee: 0,
+        profitPercent: 0,
+        profitValue: 0,
+        profitType: trade.tradeType === TradeType.SHORT ? 'coins' : 'usd',
+        coinSymbol: trade.coinSymbol
+      };
     }
 
     // Proportional entry cost for this portion
     const proportion = closeAmount / originalAmount;
     const entrySumPlusFee = trade.sumPlusFee * proportion;
 
-    // Exit calculations
-    const exitSumPlusFee = closeAmount * exit;
-    const exitSum = exitSumPlusFee * (100 - fee) / 100;
+    if (trade.tradeType === TradeType.SHORT) {
+      // SHORT: Profit in coins
+      // Calculate how many coins can be bought back
+      const buyBackPriceWithFee = exit * (100 + fee) / 100;
+      const coinsBoughtBack = entrySumPlusFee / buyBackPriceWithFee;
+      const profitCoins = coinsBoughtBack - closeAmount;
 
-    // Profit calculations
-    const profitUSD = exitSum - entrySumPlusFee;
-    const profitPercent = ((exit / trade.entryPrice - 1) * 100) - trade.entryFee - fee;
+      // Profit %
+      const profitPercent = ((coinsBoughtBack / closeAmount - 1) * 100);
 
-    return {
-      sumPlusFee: exitSumPlusFee,
-      profitPercent,
-      profitUSD,
-    };
+      return {
+        sumPlusFee: entrySumPlusFee, // Use sale amount for SHORT
+        profitPercent,
+        profitValue: profitCoins,
+        profitType: 'coins' as const,
+        coinSymbol: trade.coinSymbol,
+      };
+    } else {
+      // LONG: Profit in USD
+      // Exit calculations
+      const exitSumPlusFee = closeAmount * exit;
+      const exitSum = exitSumPlusFee * (100 - fee) / 100;
+
+      // Profit calculations
+      const profitUSD = exitSum - entrySumPlusFee;
+      const profitPercent = ((exit / trade.entryPrice - 1) * 100) - trade.entryFee - fee;
+
+      return {
+        sumPlusFee: exitSumPlusFee,
+        profitPercent,
+        profitValue: profitUSD,
+        profitType: 'usd' as const,
+        coinSymbol: trade.coinSymbol,
+      };
+    }
   };
 
   const preview = calculatePreview();
@@ -145,9 +173,10 @@ export function PartialCloseModal({
     }
 
     if (!exit || exit <= 0) {
+      const priceLabel = trade.tradeType === TradeType.SHORT ? 'buy back price' : 'exit price';
       toast({
         title: 'Error',
-        description: 'Please enter a valid exit price',
+        description: `Please enter a valid ${priceLabel}`,
         variant: 'destructive',
       });
       return;
@@ -218,7 +247,10 @@ export function PartialCloseModal({
         <DialogHeader>
           <DialogTitle>Partial Close Position</DialogTitle>
           <DialogDescription>
-            Close a portion of your {trade.coinSymbol} position
+            {trade.tradeType === TradeType.SHORT
+              ? `Buy back a portion of your ${trade.coinSymbol} SHORT position`
+              : `Close a portion of your ${trade.coinSymbol} position`
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -230,7 +262,9 @@ export function PartialCloseModal({
               <div className="font-medium">{trade.coinSymbol}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">Entry Price</div>
+              <div className="text-xs text-muted-foreground">
+                {trade.tradeType === TradeType.SHORT ? 'Sale Price' : 'Entry Price'}
+              </div>
               <div className="font-medium">${formatPrice(trade.entryPrice)}</div>
             </div>
             <div>
@@ -261,7 +295,9 @@ export function PartialCloseModal({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="exitPrice">Exit Price (USD) *</Label>
+            <Label htmlFor="exitPrice">
+              {trade.tradeType === TradeType.SHORT ? 'Buy Back Price (USD) *' : 'Exit Price (USD) *'}
+            </Label>
             <Input
               id="exitPrice"
               type="number"
@@ -309,7 +345,9 @@ export function PartialCloseModal({
             <div className="grid gap-2 p-4 rounded-lg bg-muted/50 border">
               <div className="text-sm font-semibold mb-2">Preview for this portion:</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="text-muted-foreground">Exit Sum+Fee:</div>
+                <div className="text-muted-foreground">
+                  {preview.profitType === 'coins' ? 'Sale Amount:' : 'Exit Sum+Fee:'}
+                </div>
                 <div className="font-medium">${preview.sumPlusFee.toFixed(2)}</div>
 
                 <div className="text-muted-foreground">Profit %:</div>
@@ -317,9 +355,15 @@ export function PartialCloseModal({
                   {preview.profitPercent >= 0 ? '+' : ''}{preview.profitPercent.toFixed(2)}%
                 </div>
 
-                <div className="text-muted-foreground">Profit USD:</div>
-                <div className={`font-medium ${preview.profitUSD >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  {preview.profitUSD >= 0 ? '+' : ''}${preview.profitUSD.toFixed(2)}
+                <div className="text-muted-foreground">
+                  {preview.profitType === 'coins' ? `Profit (${preview.coinSymbol}):` : 'Profit USD:'}
+                </div>
+                <div className={`font-medium ${preview.profitValue >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {preview.profitValue >= 0 ? '+' : ''}
+                  {preview.profitType === 'coins'
+                    ? `${preview.profitValue.toFixed(8)} ${preview.coinSymbol}`
+                    : `$${preview.profitValue.toFixed(2)}`
+                  }
                 </div>
               </div>
             </div>

@@ -39,6 +39,9 @@ export default function PortfolioStatsPage({ params }: StatsPageProps) {
   const [portfolio, setPortfolio] = useState<IPortfolio | null>(null);
   const [stats, setStats] = useState<PortfolioStatistics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showCurrentValue, setShowCurrentValue] = useState(false);
+  const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
+  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -108,6 +111,43 @@ export default function PortfolioStatsPage({ params }: StatsPageProps) {
     }
   };
 
+  const fetchCurrentPrices = async () => {
+    if (!stats?.short.totalProfitCoins) return;
+
+    setIsLoadingPrices(true);
+    try {
+      const symbols = Object.keys(stats.short.totalProfitCoins);
+      if (symbols.length === 0) return;
+
+      const response = await fetch(`/api/prices/current?symbols=${symbols.join(',')}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch prices');
+      }
+
+      if (data.success && data.data) {
+        setCurrentPrices(data.data);
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description:
+          error instanceof Error ? error.message : 'Failed to load current prices',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingPrices(false);
+    }
+  };
+
+  // Fetch current prices when toggle is enabled
+  useEffect(() => {
+    if (showCurrentValue && stats) {
+      fetchCurrentPrices();
+    }
+  }, [showCurrentValue, stats]);
+
   const formatCurrency = (value: number): string => {
     return value.toLocaleString('en-US', {
       minimumFractionDigits: 2,
@@ -131,6 +171,31 @@ export default function PortfolioStatsPage({ params }: StatsPageProps) {
     const formatted = price.toFixed(6);
     const trimmed = formatted.replace(/\.?0+$/, '');
     return trimmed;
+  };
+
+  // Calculate SHORT profit in USD using current prices
+  const calculateShortProfitUSD = (): number => {
+    if (!stats?.short.totalProfitCoins || !showCurrentValue) return 0;
+
+    let totalUSD = 0;
+    Object.entries(stats.short.totalProfitCoins).forEach(([symbol, amount]) => {
+      const price = currentPrices[symbol];
+      if (price) {
+        totalUSD += amount * price;
+      }
+    });
+
+    return totalUSD;
+  };
+
+  // Calculate combined P/L (LONG USD + SHORT USD)
+  const calculateCombinedPL = (): number => {
+    if (!stats) return 0;
+
+    const longProfitUSD = stats.long?.totalProfitUSD || 0;
+    const shortProfitUSD = showCurrentValue ? calculateShortProfitUSD() : 0;
+
+    return longProfitUSD + shortProfitUSD;
   };
 
   if (isLoading || !stats) {
@@ -162,34 +227,69 @@ export default function PortfolioStatsPage({ params }: StatsPageProps) {
                 {portfolio?.name || 'Portfolio'} - Performance Analytics
               </p>
             </div>
+            {stats?.short && stats.short.totalTrades > 0 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={showCurrentValue ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setShowCurrentValue(!showCurrentValue)}
+                  disabled={isLoadingPrices}
+                >
+                  {isLoadingPrices ? 'Loading...' : showCurrentValue ? 'Hide Current Value' : 'Show Current Value'}
+                </Button>
+              </div>
+            )}
           </div>
 
-          {/* Metrics Grid */}
+          {/* Overall Metrics Grid */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {/* Total Profit/Loss */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
                   Total Profit/Loss
+                  {showCurrentValue && (
+                    <span className="text-xs text-muted-foreground ml-2">(Combined)</span>
+                  )}
                 </CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div
-                  className={`text-2xl font-bold ${
-                    stats.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'
-                  }`}
-                >
-                  {stats.totalProfitUSD >= 0 ? '+' : ''}${formatCurrency(stats.totalProfitUSD)}
-                </div>
-                <p
-                  className={`text-xs ${
-                    stats.totalProfitPercent >= 0 ? 'text-green-500' : 'text-red-500'
-                  }`}
-                >
-                  {stats.totalProfitPercent >= 0 ? '+' : ''}
-                  {formatPercent(stats.totalProfitPercent)}% average
-                </p>
+                {showCurrentValue ? (
+                  <>
+                    <div
+                      className={`text-2xl font-bold ${
+                        calculateCombinedPL() >= 0 ? 'text-green-500' : 'text-red-500'
+                      }`}
+                    >
+                      {calculateCombinedPL() >= 0 ? '+' : ''}${formatCurrency(calculateCombinedPL())}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      LONG: ${formatCurrency(stats.long?.totalProfitUSD || 0)} + SHORT: ${formatCurrency(calculateShortProfitUSD())}
+                    </p>
+                    <p className="text-xs text-yellow-500 mt-1">
+                      * Current prices are approximate
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className={`text-2xl font-bold ${
+                        stats.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'
+                      }`}
+                    >
+                      {stats.totalProfitUSD >= 0 ? '+' : ''}${formatCurrency(stats.totalProfitUSD)}
+                    </div>
+                    <p
+                      className={`text-xs ${
+                        stats.totalProfitPercent >= 0 ? 'text-green-500' : 'text-red-500'
+                      }`}
+                    >
+                      {stats.totalProfitPercent >= 0 ? '+' : ''}
+                      {formatPercent(stats.totalProfitPercent)}% average
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -277,6 +377,24 @@ export default function PortfolioStatsPage({ params }: StatsPageProps) {
               </CardContent>
             </Card>
 
+            {/* Total Fees Paid */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Total Fees Paid
+                </CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-500">
+                  ${formatCurrency(stats.totalFeesPaid)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Entry + Exit fees on closed trades
+                </p>
+              </CardContent>
+            </Card>
+
             {/* Best/Worst Trade */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -308,6 +426,114 @@ export default function PortfolioStatsPage({ params }: StatsPageProps) {
                 )}
               </CardContent>
             </Card>
+          </div>
+
+          {/* LONG and SHORT Specific Metrics */}
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* LONG Performance */}
+            {stats.long && stats.long.totalTrades > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-green-500" />
+                    LONG Performance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Total Profit (USD)</div>
+                    <div className={`text-2xl font-bold ${stats.long.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {stats.long.totalProfitUSD >= 0 ? '+' : ''}${formatCurrency(stats.long.totalProfitUSD)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Win Rate</div>
+                    <div className="text-xl font-bold">{formatPercent(stats.long.winRate)}%</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Avg Profit per Trade</div>
+                    <div className={`text-xl font-bold ${stats.long.avgProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {stats.long.avgProfitUSD >= 0 ? '+' : ''}${formatCurrency(stats.long.avgProfitUSD)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {stats.long.avgProfitPercent >= 0 ? '+' : ''}{formatPercent(stats.long.avgProfitPercent)}% avg
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t">
+                    <div className="text-sm text-muted-foreground">Total LONG Trades</div>
+                    <div className="text-xl font-bold">{stats.long.totalTrades}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* SHORT Performance */}
+            {stats.short && stats.short.totalTrades > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingDown className="h-5 w-5 text-orange-500" />
+                    SHORT Performance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <div className="text-sm text-muted-foreground">
+                      Total Profit {showCurrentValue ? '(USD)' : '(Coins)'}
+                    </div>
+                    {showCurrentValue ? (
+                      <>
+                        <div className={`text-2xl font-bold ${calculateShortProfitUSD() >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {calculateShortProfitUSD() >= 0 ? '+' : ''}${formatCurrency(calculateShortProfitUSD())}
+                        </div>
+                        <div className="space-y-0.5 mt-2 text-xs text-muted-foreground">
+                          {Object.entries(stats.short.totalProfitCoins).map(([symbol, amount]) => {
+                            const price = currentPrices[symbol];
+                            return (
+                              <div key={symbol}>
+                                {amount.toFixed(8)} {symbol} × ${price ? formatCurrency(price) : '-.--'} = ${price ? formatCurrency(amount * price) : '-.--'}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p className="text-xs text-yellow-500 mt-2">
+                          * Current prices are approximate
+                        </p>
+                      </>
+                    ) : (
+                      <div className="space-y-1">
+                        {Object.entries(stats.short.totalProfitCoins).map(([symbol, amount]) => (
+                          <div key={symbol} className={`text-lg font-bold ${amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {amount >= 0 ? '+' : ''}{amount.toFixed(8)} {symbol}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Win Rate</div>
+                    <div className="text-xl font-bold">{formatPercent(stats.short.winRate)}%</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Avg Profit per Trade</div>
+                    <div className="space-y-1">
+                      {Object.entries(stats.short.avgProfitCoins).map(([symbol, amount]) => (
+                        <div key={symbol} className={`text-lg font-bold ${amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {amount >= 0 ? '+' : ''}{amount.toFixed(8)} {symbol}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {stats.short.avgProfitPercent >= 0 ? '+' : ''}{formatPercent(stats.short.avgProfitPercent)}% avg
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t">
+                    <div className="text-sm text-muted-foreground">Total SHORT Trades</div>
+                    <div className="text-xl font-bold">{stats.short.totalTrades}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Performance by Coin */}

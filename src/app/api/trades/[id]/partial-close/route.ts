@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Trade from '@/models/Trade';
 import Portfolio from '@/models/Portfolio';
-import { ApiResponse, PartialCloseInput, TradeStatus } from '@/types';
+import { ApiResponse, PartialCloseInput, TradeStatus, TradeType } from '@/types';
 import { z } from 'zod';
 
 interface RouteParams {
@@ -111,6 +111,7 @@ export async function POST(
       portfolioId: parentTrade.portfolioId,
       coinSymbol: parentTrade.coinSymbol,
       status: TradeStatus.CLOSED,
+      tradeType: parentTrade.tradeType,
       entryPrice: parentTrade.entryPrice,
       depositPercent: parentTrade.depositPercent,
       entryFee: parentTrade.entryFee,
@@ -118,6 +119,8 @@ export async function POST(
       amount: validatedData.amountToClose,
       originalAmount: currentOriginal,
       remainingAmount: 0, // This portion is fully closed
+      initialEntryPrice: parentTrade.initialEntryPrice,
+      initialAmount: parentTrade.initialAmount,
       isPartialClose: true,
       parentTradeId: parentTrade._id.toString(),
       closedAmount: validatedData.amountToClose,
@@ -129,6 +132,38 @@ export async function POST(
     });
 
     await closedTrade.save();
+
+    // If SHORT trade is being partially closed, update parent LONG trade
+    if (parentTrade.tradeType === TradeType.SHORT && parentTrade.parentTradeId) {
+      // Calculate profit in coins for this portion of SHORT
+      // IMPORTANT: proportionalSumPlusFee is now GROSS amount (before entry fee deduction)
+
+      // Calculate net received after entry fee (sale fee)
+      const entryFeeVal = parentTrade.entryFee ?? 0;
+      const netReceived = proportionalSumPlusFee * (100 - entryFeeVal) / 100;
+
+      // Calculate buy back cost with exit fee
+      const exitFeeVal = validatedData.exitFee ?? 0;
+      const buyBackPriceWithFee = validatedData.exitPrice * (100 + exitFeeVal) / 100;
+
+      // Calculate coins bought back from net received
+      const coinsBoughtBack = netReceived / buyBackPriceWithFee;
+
+      // Find parent LONG trade
+      const longParentTrade = await Trade.findById(parentTrade.parentTradeId);
+
+      if (longParentTrade && longParentTrade.tradeType === TradeType.LONG) {
+        // Update parent LONG trade
+        const newAmount = (longParentTrade.remainingAmount ?? longParentTrade.amount) + coinsBoughtBack;
+        const newEntryPrice = longParentTrade.sumPlusFee / newAmount;
+
+        longParentTrade.remainingAmount = newAmount;
+        longParentTrade.entryPrice = newEntryPrice;
+        // Do NOT update initialEntryPrice or initialAmount!
+
+        await longParentTrade.save();
+      }
+    }
 
     // Check if remaining amount is essentially zero (floating point precision)
     const isFullyClosed = newRemainingAmount <= 0.00000001;

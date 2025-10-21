@@ -34,8 +34,8 @@ import { CloseTradeDialog } from '@/components/features/trades/CloseTradeDialog'
 import { PartialCloseModal } from '@/components/features/trades/PartialCloseModal';
 import { GroupedClosedTradeRow, TradeGroup } from '@/components/features/trades/GroupedClosedTradeRow';
 import { useToast } from '@/components/ui/use-toast';
-import { IPortfolio, ITrade, TradeStatus } from '@/types';
-import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3, Pencil, Download, Eye, EyeOff } from 'lucide-react';
+import { IPortfolio, ITrade, TradeStatus, TradeType } from '@/types';
+import { ArrowLeft, Edit, Trash2, Plus, Check, DollarSign, MinusCircle, BarChart3, Pencil, Download, Eye, EyeOff, TrendingDown, CornerDownRight } from 'lucide-react';
 import { useBlur } from '@/contexts/BlurContext';
 import { BlurredAmount } from '@/components/ui/BlurredAmount';
 
@@ -60,6 +60,13 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showCreateTradeModal, setShowCreateTradeModal] = useState(false);
+  const [createTradePrefilledData, setCreateTradePrefilledData] = useState<{
+    coinSymbol?: string;
+    tradeType?: TradeType;
+    parentTradeId?: string;
+    salePrice?: number;
+    maxAmount?: number;
+  } | undefined>(undefined);
   const [showEditTradeDialog, setShowEditTradeDialog] = useState(false);
   const [showEditExitPriceModal, setShowEditExitPriceModal] = useState(false);
   const [showMarkAsFilledDialog, setShowMarkAsFilledDialog] = useState(false);
@@ -73,6 +80,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   const [deleteTradeDialogOpen, setDeleteTradeDialogOpen] = useState(false);
   const [tradeToDelete, setTradeToDelete] = useState<ITrade | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showFees, setShowFees] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -162,6 +170,19 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
 
   const handleTradeCreated = (trade: ITrade) => {
     setTrades([trade, ...trades]);
+    // Refresh portfolio to update initialCoins if SHORT was created
+    fetchPortfolio();
+  };
+
+  const handleOpenShort = (parentTrade: ITrade) => {
+    setCreateTradePrefilledData({
+      coinSymbol: parentTrade.coinSymbol,
+      tradeType: TradeType.SHORT,
+      parentTradeId: parentTrade._id,
+      salePrice: parentTrade.exitPrice,
+      maxAmount: parentTrade.remainingAmount || parentTrade.amount,
+    });
+    setShowCreateTradeModal(true);
   };
 
   const handleTradeUpdated = (updatedTrade: ITrade) => {
@@ -320,6 +341,44 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     (t) => t.status === TradeStatus.OPEN || t.status === TradeStatus.FILLED
   );
   const closedTrades = trades.filter((t) => t.status === TradeStatus.CLOSED);
+
+  // Group open trades: LONG with their SHORT children
+  const groupedOpenTrades = useMemo(() => {
+    const grouped: Array<{ parent: ITrade; children: ITrade[] }> = [];
+    const processedIds = new Set<string>();
+
+    // First, collect all LONG trades and their SHORT children
+    const longTrades = openTrades.filter(t => t.tradeType === TradeType.LONG);
+
+    longTrades.forEach(longTrade => {
+      // Find SHORT trades that reference this LONG as parent
+      const shortChildren = openTrades.filter(
+        t => t.tradeType === TradeType.SHORT && t.parentTradeId === longTrade._id
+      );
+
+      grouped.push({
+        parent: longTrade,
+        children: shortChildren,
+      });
+
+      // Mark all as processed
+      processedIds.add(longTrade._id);
+      shortChildren.forEach(child => processedIds.add(child._id));
+    });
+
+    // Add standalone SHORT trades (from initialCoins, not from LONG)
+    openTrades.forEach(trade => {
+      if (trade.tradeType === TradeType.SHORT && !processedIds.has(trade._id)) {
+        grouped.push({
+          parent: trade,
+          children: [],
+        });
+        processedIds.add(trade._id);
+      }
+    });
+
+    return grouped;
+  }, [openTrades]);
 
   // Group closed trades by parent
   const groupedClosedTrades = useMemo(() => {
@@ -532,13 +591,27 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
               <CardContent className="space-y-4">
                 <div>
                   <div className="text-sm text-muted-foreground">
-                    Total Deposit
+                    Cash Deposit (USD)
                   </div>
                   <div className="text-3xl font-bold">
                     <BlurredAmount amount={portfolio.totalDeposit} />
                   </div>
                 </div>
-                <div>
+                {portfolio.initialCoins && portfolio.initialCoins.length > 0 && (
+                  <div className="pt-2 border-t">
+                    <div className="text-sm text-muted-foreground mb-2">
+                      Initial Coins
+                    </div>
+                    <div className="space-y-1">
+                      {portfolio.initialCoins.map((coin, idx) => (
+                        <div key={idx} className="text-sm font-medium text-blue-400">
+                          {formatAmount(coin.amount)} {coin.symbol}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="pt-2 border-t">
                   <div className="text-sm text-muted-foreground mb-2">
                     Created
                   </div>
@@ -560,14 +633,20 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
               <CardContent>
                 <div className="space-y-3">
                   {portfolio.coins.map((coin, index) => {
-                    const allocation =
-                      (portfolio.totalDeposit * coin.percentage) / 100;
+                    // Allocation based on cash deposit only
+                    const allocation = (portfolio.totalDeposit * coin.percentage) / 100;
+
+                    // Initial coins for THIS specific coin (in amount, not value)
+                    const initialCoinForSymbol = portfolio.initialCoins?.find(ic => ic.symbol === coin.symbol);
+                    const initialCoinAmount = initialCoinForSymbol?.amount || 0;
 
                     // Calculate used amount from open/filled trades
                     const coinOpenTrades = openTrades.filter(t => t.coinSymbol === coin.symbol);
-                    const usedAmount = coinOpenTrades.reduce((sum, trade) => sum + trade.sumPlusFee, 0);
-                    const usedPercent = allocation > 0 ? (usedAmount / allocation) * 100 : 0;
+                    const usedInTrades = coinOpenTrades.reduce((sum, trade) => sum + trade.sumPlusFee, 0);
+
+                    const usedPercent = allocation > 0 ? (usedInTrades / allocation) * 100 : 0;
                     const availablePercent = 100 - usedPercent;
+                    const availableAmount = allocation - usedInTrades;
 
                     return (
                       <div
@@ -590,28 +669,42 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                             </div>
                           </div>
                         </div>
-                        {usedPercent > 0 && (
-                          <div className="space-y-1">
+                        <div className="space-y-1">
+                          {initialCoinAmount > 0 && (
                             <div className="flex items-center justify-between text-xs">
-                              <span className="text-muted-foreground">
-                                Used in open trades: {usedPercent.toFixed(1)}%
-                              </span>
-                              <span className="text-muted-foreground">
-                                Available: {availablePercent.toFixed(1)}%
+                              <span className="text-blue-400">Initial coins:</span>
+                              <span className="text-blue-400">
+                                {formatAmount(initialCoinAmount)} {coin.symbol}
                               </span>
                             </div>
-                            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                              <div
-                                className={`h-full transition-all ${
-                                  usedPercent > 100 ? 'bg-red-500' :
-                                  usedPercent > 80 ? 'bg-yellow-500' :
-                                  'bg-green-500'
-                                }`}
-                                style={{ width: `${Math.min(usedPercent, 100)}%` }}
-                              />
+                          )}
+                          {usedInTrades > 0 && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">In open trades:</span>
+                              <span className="text-muted-foreground">
+                                <BlurredAmount amount={usedInTrades} />
+                              </span>
                             </div>
+                          )}
+                          <div className="flex items-center justify-between text-xs font-medium pt-1 border-t border-muted">
+                            <span className={availablePercent < 0 ? 'text-red-500' : 'text-green-500'}>
+                              Available: {availablePercent.toFixed(1)}%
+                            </span>
+                            <span className={availablePercent < 0 ? 'text-red-500' : 'text-green-500'}>
+                              <BlurredAmount amount={availableAmount} showSign={true} />
+                            </span>
                           </div>
-                        )}
+                          <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${
+                                usedPercent > 100 ? 'bg-red-500' :
+                                usedPercent > 80 ? 'bg-yellow-500' :
+                                'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min(usedPercent, 100)}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
@@ -700,17 +793,35 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {openTrades.map((trade) => {
-                        const profitPercent = calculateProfitPercent(trade);
-                        const profitUSD = calculateProfitUSD(trade);
-                        const originalAmount = trade.originalAmount ?? trade.amount;
-                        const remainingAmount = trade.remainingAmount ?? trade.amount;
+                      {groupedOpenTrades.map((group) => {
+                        const renderTradeRow = (trade: ITrade, isChild: boolean = false) => {
+                          const profitPercent = calculateProfitPercent(trade);
+                          const profitUSD = calculateProfitUSD(trade);
+                          const originalAmount = trade.originalAmount ?? trade.amount;
+                          const remainingAmount = trade.remainingAmount ?? trade.amount;
 
-                        return (
-                          <TableRow key={trade._id}>
-                            <TableCell className="font-medium">
-                              {trade.coinSymbol}
-                            </TableCell>
+                          return (
+                            <TableRow key={trade._id} className={isChild ? 'bg-muted/30' : ''}>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  {isChild && (
+                                    <CornerDownRight className="h-4 w-4 text-muted-foreground" />
+                                  )}
+                                  <div>
+                                    {trade.coinSymbol}
+                                    {trade.tradeType === TradeType.SHORT && (
+                                      <span className="ml-2 text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
+                                        SHORT
+                                      </span>
+                                    )}
+                                    {isChild && (
+                                      <div className="text-xs text-muted-foreground mt-0.5">
+                                        ↳ SHORT for parent LONG
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </TableCell>
                             <TableCell>
                               {getStatusBadge(trade.status)}
                             </TableCell>
@@ -833,6 +944,17 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                                     >
                                       <MinusCircle className="h-4 w-4 text-yellow-500" />
                                     </Button>
+                                    {/* Open SHORT button - only for LONG positions with remaining amount */}
+                                    {trade.tradeType === TradeType.LONG && remainingAmount > 0 && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleOpenShort(trade)}
+                                        title="Open SHORT from this LONG position"
+                                      >
+                                        <TrendingDown className="h-4 w-4 text-orange-500" />
+                                      </Button>
+                                    )}
                                   </>
                                 )}
                                 <Button
@@ -850,7 +972,16 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                             </TableCell>
                           </TableRow>
                         );
-                      })}
+                      };
+
+                      // Render parent trade and its children
+                      return (
+                        <>
+                          {renderTradeRow(group.parent, false)}
+                          {group.children.map(child => renderTradeRow(child, true))}
+                        </>
+                      );
+                    })}
                     </TableBody>
                   </Table>
                 </div>
@@ -860,7 +991,19 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Closed Trades</CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle>Closed Trades</CardTitle>
+                {groupedClosedTrades.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFees(!showFees)}
+                  >
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    {showFees ? 'Hide Fees' : 'Show Fees'}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {groupedClosedTrades.length === 0 ? (
@@ -876,18 +1019,23 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                         <TableHead className="min-w-[80px]">Type</TableHead>
                         <TableHead className="min-w-[70px]">Status</TableHead>
                         <TableHead className="min-w-[90px]">Entry Price</TableHead>
+                        <TableHead className="min-w-[90px]">Initial Entry</TableHead>
                         <TableHead className="min-w-[90px]">Sum+Fee</TableHead>
                         <TableHead className="min-w-[110px]">Amount</TableHead>
                         <TableHead className="min-w-[90px]">Exit Price</TableHead>
                         <TableHead className="min-w-[80px]">Profit %</TableHead>
-                        <TableHead className="min-w-[80px]">Profit $</TableHead>
+                        <TableHead className="min-w-[120px]">Profit</TableHead>
                         <TableHead className="min-w-[100px]">Filled Date</TableHead>
                         <TableHead className="min-w-[100px]">Close Date</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {groupedClosedTrades.map((group, index) => (
-                        <GroupedClosedTradeRow key={group.mainTrade._id + '-' + index} group={group} />
+                        <GroupedClosedTradeRow
+                          key={group.mainTrade._id + '-' + index}
+                          group={group}
+                          showFees={showFees}
+                        />
                       ))}
                     </TableBody>
                   </Table>
@@ -914,9 +1062,16 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
           />
           <CreateTradeModal
             open={showCreateTradeModal}
-            onOpenChange={setShowCreateTradeModal}
+            onOpenChange={(open) => {
+              setShowCreateTradeModal(open);
+              if (!open) {
+                // Clear prefilled data when modal closes
+                setCreateTradePrefilledData(undefined);
+              }
+            }}
             portfolio={portfolio}
             onSuccess={handleTradeCreated}
+            prefilledData={createTradePrefilledData}
           />
         </>
       )}

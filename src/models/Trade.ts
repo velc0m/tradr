@@ -1,5 +1,5 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { ITrade, TradeStatus } from '@/types';
+import { ITrade, TradeStatus, TradeType } from '@/types';
 
 const TradeSchema = new Schema<ITrade>(
   {
@@ -19,6 +19,13 @@ const TradeSchema = new Schema<ITrade>(
       type: String,
       enum: Object.values(TradeStatus),
       default: TradeStatus.OPEN,
+      required: true,
+      index: true,
+    },
+    tradeType: {
+      type: String,
+      enum: Object.values(TradeType),
+      default: TradeType.LONG,
       required: true,
       index: true,
     },
@@ -65,6 +72,16 @@ const TradeSchema = new Schema<ITrade>(
     remainingAmount: {
       type: Number,
       min: [0, 'Remaining amount cannot be negative'],
+    },
+    initialEntryPrice: {
+      type: Number,
+      required: [true, 'Initial entry price is required'],
+      min: [0, 'Initial entry price cannot be negative'],
+    },
+    initialAmount: {
+      type: Number,
+      required: [true, 'Initial amount is required'],
+      min: [0, 'Initial amount cannot be negative'],
     },
     isPartialClose: {
       type: Boolean,

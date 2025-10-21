@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
-import { ITrade, TradeStatus } from '@/types';
+import { ITrade, TradeStatus, TradeType } from '@/types';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BlurredAmount } from '@/components/ui/BlurredAmount';
@@ -23,9 +23,10 @@ export interface TradeGroup {
 
 interface GroupedClosedTradeRowProps {
   group: TradeGroup;
+  showFees?: boolean;
 }
 
-export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
+export function GroupedClosedTradeRow({ group, showFees = false }: GroupedClosedTradeRowProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const formatPrice = (price: number): string => {
@@ -47,11 +48,20 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
   if (group.type === 'full') {
     const trade = group.mainTrade;
     const profitPercent = calculateProfitPercent(trade);
-    const profitUSD = calculateProfitUSD(trade);
+    const profitResult = calculateProfitResult(trade);
 
     return (
       <TableRow>
-        <TableCell className="font-medium">{trade.coinSymbol}</TableCell>
+        <TableCell className="font-medium">
+          <div>
+            {trade.coinSymbol}
+            {trade.tradeType === TradeType.SHORT && (
+              <span className="ml-2 text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
+                SHORT
+              </span>
+            )}
+          </div>
+        </TableCell>
         <TableCell>
           <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded">
             Full
@@ -63,6 +73,13 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
           </span>
         </TableCell>
         <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
+        <TableCell>
+          {trade.tradeType === TradeType.LONG && trade.initialEntryPrice ? (
+            <span className="text-xs text-muted-foreground">
+              ${formatPrice(trade.initialEntryPrice)}
+            </span>
+          ) : '-'}
+        </TableCell>
         <TableCell><BlurredAmount amount={trade.sumPlusFee} /></TableCell>
         <TableCell>{trade.amount.toFixed(8)}</TableCell>
         <TableCell>
@@ -76,10 +93,21 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
           ) : '-'}
         </TableCell>
         <TableCell>
-          {profitUSD !== null ? (
-            <span className={profitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-              <BlurredAmount amount={profitUSD} showSign={true} />
-            </span>
+          {profitResult !== null ? (
+            <div>
+              <span className={profitResult.value >= 0 ? 'text-green-500' : 'text-red-500'}>
+                {profitResult.value >= 0 ? '+' : ''}
+                {profitResult.type === 'coins'
+                  ? `${profitResult.value.toFixed(8)} ${profitResult.symbol}`
+                  : <BlurredAmount amount={profitResult.value} />
+                }
+              </span>
+              {showFees && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  Fees: {trade.entryFee}% + {trade.exitFee || 0}%
+                </div>
+              )}
+            </div>
           ) : '-'}
         </TableCell>
         <TableCell>{formatDate(trade.filledDate)}</TableCell>
@@ -99,6 +127,12 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
   const badgeColor = group.parts.length === 1
     ? 'bg-yellow-500/20 text-yellow-400'
     : 'bg-purple-500/20 text-purple-400';
+
+  // Calculate summary profit result (check if SHORT)
+  const isShort = group.mainTrade.tradeType === TradeType.SHORT;
+  const summaryProfitResult = isShort
+    ? { type: 'coins' as const, value: summary.totalProfitUSD, symbol: group.mainTrade.coinSymbol }
+    : { type: 'usd' as const, value: summary.totalProfitUSD };
 
   return (
     <>
@@ -124,6 +158,11 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
               </Button>
             )}
             {group.mainTrade.coinSymbol}
+            {group.mainTrade.tradeType === TradeType.SHORT && (
+              <span className="ml-2 text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
+                SHORT
+              </span>
+            )}
           </div>
         </TableCell>
         <TableCell>
@@ -137,6 +176,13 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
           </span>
         </TableCell>
         <TableCell>${formatPrice(group.mainTrade.entryPrice)}</TableCell>
+        <TableCell>
+          {group.mainTrade.tradeType === TradeType.LONG && group.mainTrade.initialEntryPrice ? (
+            <span className="text-xs text-muted-foreground">
+              ${formatPrice(group.mainTrade.initialEntryPrice)}
+            </span>
+          ) : '-'}
+        </TableCell>
         <TableCell><BlurredAmount amount={group.mainTrade.sumPlusFee} /></TableCell>
         <TableCell>{summary.totalAmount.toFixed(8)}</TableCell>
         <TableCell>${formatPrice(summary.avgExitPrice)}</TableCell>
@@ -146,9 +192,20 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
           </span>
         </TableCell>
         <TableCell>
-          <span className={summary.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-            <BlurredAmount amount={summary.totalProfitUSD} showSign={true} />
-          </span>
+          <div>
+            <span className={summaryProfitResult.value >= 0 ? 'text-green-500' : 'text-red-500'}>
+              {summaryProfitResult.value >= 0 ? '+' : ''}
+              {summaryProfitResult.type === 'coins'
+                ? `${summaryProfitResult.value.toFixed(8)} ${summaryProfitResult.symbol}`
+                : <BlurredAmount amount={summaryProfitResult.value} />
+              }
+            </span>
+            {showFees && (
+              <div className="text-xs text-muted-foreground mt-1">
+                Avg: {group.mainTrade.entryFee}% + {group.mainTrade.exitFee || 0}%
+              </div>
+            )}
+          </div>
         </TableCell>
         <TableCell>{formatDate(group.mainTrade.filledDate)}</TableCell>
         <TableCell>
@@ -159,7 +216,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
       {/* Expanded Part Rows */}
       {isExpanded && group.parts.map((part, index) => {
         const partProfitPercent = calculateProfitPercent(part);
-        const partProfitUSD = calculateProfitUSD(part);
+        const partProfitResult = calculateProfitResult(part);
 
         return (
           <TableRow key={part._id} className="bg-muted/30">
@@ -174,6 +231,7 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
               </span>
             </TableCell>
             <TableCell>-</TableCell>
+            <TableCell className="text-xs text-muted-foreground">-</TableCell>
             <TableCell className="text-xs text-muted-foreground">-</TableCell>
             <TableCell className="text-xs text-muted-foreground">
               <BlurredAmount amount={part.sumPlusFee} />
@@ -190,10 +248,21 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
               ) : '-'}
             </TableCell>
             <TableCell className="text-sm">
-              {partProfitUSD !== null ? (
-                <span className={partProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-                  <BlurredAmount amount={partProfitUSD} showSign={true} />
-                </span>
+              {partProfitResult !== null ? (
+                <div>
+                  <span className={partProfitResult.value >= 0 ? 'text-green-500' : 'text-red-500'}>
+                    {partProfitResult.value >= 0 ? '+' : ''}
+                    {partProfitResult.type === 'coins'
+                      ? `${partProfitResult.value.toFixed(8)} ${partProfitResult.symbol}`
+                      : <BlurredAmount amount={partProfitResult.value} />
+                    }
+                  </span>
+                  {showFees && (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {part.entryFee}% + {part.exitFee || 0}%
+                    </div>
+                  )}
+                </div>
               ) : '-'}
             </TableCell>
             <TableCell className="text-xs text-muted-foreground">-</TableCell>
@@ -208,6 +277,16 @@ export function GroupedClosedTradeRow({ group }: GroupedClosedTradeRowProps) {
 // Helper functions
 function calculateProfitPercent(trade: ITrade): number | null {
   if (!trade.exitPrice) return null;
+
+  if (trade.tradeType === TradeType.SHORT) {
+    // For SHORT: profit % based on coins gained
+    const exitFeeVal = trade.exitFee || 0;
+    const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
+    const coinsBoughtBack = trade.sumPlusFee / buyBackPriceWithFee;
+    return ((coinsBoughtBack / trade.amount - 1) * 100);
+  }
+
+  // For LONG: existing logic
   return (
     ((trade.exitPrice / trade.entryPrice - 1) * 100) -
     trade.entryFee -
@@ -215,8 +294,34 @@ function calculateProfitPercent(trade: ITrade): number | null {
   );
 }
 
-function calculateProfitUSD(trade: ITrade): number | null {
+function calculateProfitResult(trade: ITrade): { type: 'coins' | 'usd'; value: number; symbol?: string } | null {
   if (!trade.exitPrice) return null;
+
+  if (trade.tradeType === TradeType.SHORT) {
+    // SHORT: profit in coins
+    const exitFeeVal = trade.exitFee || 0;
+    const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
+    const coinsBoughtBack = trade.sumPlusFee / buyBackPriceWithFee;
+    const profitCoins = coinsBoughtBack - trade.amount;
+
+    return {
+      type: 'coins',
+      value: profitCoins,
+      symbol: trade.coinSymbol,
+    };
+  }
+
+  // LONG: profit in USD
   const exitValue = trade.amount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
-  return exitValue - trade.sumPlusFee;
+  return {
+    type: 'usd',
+    value: exitValue - trade.sumPlusFee,
+  };
+}
+
+// Backward compatibility
+function calculateProfitUSD(trade: ITrade): number | null {
+  const result = calculateProfitResult(trade);
+  if (!result) return null;
+  return result.type === 'usd' ? result.value : null;
 }

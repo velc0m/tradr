@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { ITrade } from '@/types';
+import { ITrade, TradeType } from '@/types';
 import { X } from 'lucide-react';
 
 interface EditExitPriceModalProps {
@@ -42,6 +42,13 @@ export function EditExitPriceModal({
     return trimmed;
   };
 
+  // Format amount (coins) without trailing zeros
+  const formatAmount = (amount: number): string => {
+    const formatted = amount.toFixed(10);
+    const trimmed = formatted.replace(/\.?0+$/, '');
+    return trimmed;
+  };
+
   // Reset form when trade changes
   useEffect(() => {
     setExitPrice(trade.exitPrice?.toString() || '');
@@ -58,9 +65,9 @@ export function EditExitPriceModal({
 
   const fetchExitFee = async () => {
     try {
-      // For exit fee: include all filled trades (the trade should already be filled)
+      // For exit fee: include current trade in volume
       const response = await fetch(
-        `/api/portfolios/${trade.portfolioId}/calculate-fee?type=exit`
+        `/api/portfolios/${trade.portfolioId}/calculate-fee?type=exit&includeTradeId=${trade._id}`
       );
       const data = await response.json();
 
@@ -77,20 +84,8 @@ export function EditExitPriceModal({
     }
   };
 
-  // Calculate Profit %
-  const profitPercent = useMemo(() => {
-    const exit = parseFloat(exitPrice) || 0;
-    const entry = trade.entryPrice;
-    const entryFeeVal = trade.entryFee;
-    const exitFeeVal = parseFloat(exitFee) || 0;
-
-    if (exit === 0) return null;
-
-    return ((exit / entry - 1) * 100 - entryFeeVal - exitFeeVal);
-  }, [exitPrice, trade.entryPrice, trade.entryFee, exitFee]);
-
-  // Calculate Profit $ for REMAINING amount only
-  const profitUSD = useMemo(() => {
+  // Calculate Profit % and Profit Amount (USD for LONG, coins for SHORT)
+  const profitResult = useMemo(() => {
     const exit = parseFloat(exitPrice) || 0;
     const exitFeeVal = parseFloat(exitFee) || 0;
 
@@ -98,16 +93,43 @@ export function EditExitPriceModal({
 
     const remainingAmount = trade.remainingAmount ?? trade.amount;
     const originalAmount = trade.originalAmount ?? trade.amount;
-
-    // Proportional entry cost for remaining amount
     const proportion = remainingAmount / originalAmount;
-    const proportionalEntryCost = trade.sumPlusFee * proportion;
 
-    // Exit value for remaining amount
-    const exitValue = remainingAmount * exit * (100 - exitFeeVal) / 100;
+    if (trade.tradeType === TradeType.SHORT) {
+      // SHORT: Profit in coins
+      // Calculate how many coins can be bought back with the proportional sale amount
+      const proportionalSaleAmount = trade.sumPlusFee * proportion;
+      const buyBackPriceWithFee = exit * (100 + exitFeeVal) / 100;
+      const coinsBoughtBack = proportionalSaleAmount / buyBackPriceWithFee;
+      const profitCoins = coinsBoughtBack - remainingAmount;
 
-    return exitValue - proportionalEntryCost;
-  }, [exitPrice, exitFee, trade.remainingAmount, trade.originalAmount, trade.amount, trade.sumPlusFee]);
+      // Profit %: based on initial entry price vs buy back price
+      const profitPercent = ((coinsBoughtBack / remainingAmount - 1) * 100);
+
+      return {
+        type: 'coins' as const,
+        value: profitCoins,
+        percent: profitPercent,
+        symbol: trade.coinSymbol,
+      };
+    } else {
+      // LONG: Profit in USD
+      const entry = trade.entryPrice;
+      const entryFeeVal = trade.entryFee;
+      const proportionalEntryCost = trade.sumPlusFee * proportion;
+      const exitValue = remainingAmount * exit * (100 - exitFeeVal) / 100;
+      const profitUSD = exitValue - proportionalEntryCost;
+
+      // Profit %
+      const profitPercent = ((exit / entry - 1) * 100 - entryFeeVal - exitFeeVal);
+
+      return {
+        type: 'usd' as const,
+        value: profitUSD,
+        percent: profitPercent,
+      };
+    }
+  }, [exitPrice, exitFee, trade]);
 
   const handleClearExitPrice = async () => {
     setIsLoading(true);
@@ -212,9 +234,14 @@ export function EditExitPriceModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Set Exit Price</DialogTitle>
+          <DialogTitle>
+            {trade.tradeType === TradeType.SHORT ? 'Set Buy Back Price' : 'Set Exit Price'}
+          </DialogTitle>
           <DialogDescription>
-            Set the exit price and fee for this trade
+            {trade.tradeType === TradeType.SHORT
+              ? 'Set the buy back price and fee for this SHORT trade'
+              : 'Set the exit price and fee for this trade'
+            }
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -224,19 +251,21 @@ export function EditExitPriceModal({
               <div className="text-sm text-muted-foreground space-y-1">
                 <div>Coin: {trade.coinSymbol}</div>
                 <div>Entry Price: ${formatPrice(trade.entryPrice)}</div>
-                <div>Original Amount: {(trade.originalAmount ?? trade.amount).toFixed(8)}</div>
+                <div>Original Amount: {formatAmount(trade.originalAmount ?? trade.amount)}</div>
                 <div className="font-medium text-yellow-400">
-                  Remaining Amount: {(trade.remainingAmount ?? trade.amount).toFixed(8)}
+                  Remaining Amount: {formatAmount(trade.remainingAmount ?? trade.amount)}
                 </div>
               </div>
               <p className="text-xs text-muted-foreground italic">
-                Setting exit price for remaining {(trade.remainingAmount ?? trade.amount).toFixed(8)} {trade.coinSymbol}
+                Setting exit price for remaining {formatAmount(trade.remainingAmount ?? trade.amount)} {trade.coinSymbol}
               </p>
             </div>
 
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="exitPrice">Exit Price</Label>
+                <Label htmlFor="exitPrice">
+                  {trade.tradeType === TradeType.SHORT ? 'Buy Back Price' : 'Exit Price'}
+                </Label>
                 {exitPrice && (
                   <Button
                     type="button"
@@ -262,7 +291,10 @@ export function EditExitPriceModal({
                 disabled={isLoading}
               />
               <p className="text-xs text-muted-foreground">
-                Leave empty to clear exit price
+                {trade.tradeType === TradeType.SHORT
+                  ? 'Leave empty to clear buy back price'
+                  : 'Leave empty to clear exit price'
+                }
               </p>
             </div>
 
@@ -287,7 +319,7 @@ export function EditExitPriceModal({
               />
             </div>
 
-            {profitPercent !== null && profitUSD !== null && (
+            {profitResult !== null && (
               <div className="grid gap-2 p-3 rounded-lg bg-muted">
                 <Label>Projected Results</Label>
                 <div className="text-sm space-y-1">
@@ -295,21 +327,27 @@ export function EditExitPriceModal({
                     <span>Profit %:</span>
                     <span
                       className={
-                        profitPercent >= 0 ? 'text-green-500' : 'text-red-500'
+                        profitResult.percent >= 0 ? 'text-green-500' : 'text-red-500'
                       }
                     >
-                      {profitPercent >= 0 ? '+' : ''}
-                      {profitPercent.toFixed(2)}%
+                      {profitResult.percent >= 0 ? '+' : ''}
+                      {profitResult.percent.toFixed(2)}%
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Profit $:</span>
+                    <span>
+                      {profitResult.type === 'coins' ? `Profit (${profitResult.symbol}):` : 'Profit $:'}
+                    </span>
                     <span
                       className={
-                        profitUSD >= 0 ? 'text-green-500' : 'text-red-500'
+                        profitResult.value >= 0 ? 'text-green-500' : 'text-red-500'
                       }
                     >
-                      {profitUSD >= 0 ? '+' : ''}${profitUSD.toFixed(2)}
+                      {profitResult.value >= 0 ? '+' : ''}
+                      {profitResult.type === 'coins'
+                        ? `${profitResult.value.toFixed(8)} ${profitResult.symbol}`
+                        : `$${profitResult.value.toFixed(2)}`
+                      }
                     </span>
                   </div>
                 </div>

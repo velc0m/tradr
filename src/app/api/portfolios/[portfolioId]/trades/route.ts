@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Trade from '@/models/Trade';
 import Portfolio from '@/models/Portfolio';
-import { ApiResponse, CreateTradeInput, TradeStatus } from '@/types';
+import { ApiResponse, CreateTradeInput, TradeStatus, TradeType } from '@/types';
 import { z } from 'zod';
 
 interface RouteParams {
@@ -15,6 +15,7 @@ interface RouteParams {
 
 const createTradeSchema = z.object({
   coinSymbol: z.string().min(1, 'Coin symbol is required').toUpperCase(),
+  tradeType: z.enum(['LONG', 'SHORT']).optional().default('LONG'),
   entryPrice: z.number().positive('Entry price must be positive'),
   depositPercent: z
     .number()
@@ -24,6 +25,7 @@ const createTradeSchema = z.object({
   amount: z.number().positive('Amount must be positive'),
   sumPlusFee: z.number().positive('Sum plus fee must be positive'),
   openDate: z.string().optional(), // Accept date as string to avoid timezone conversion
+  parentTradeId: z.string().optional(), // For SHORT trades from LONG positions
 });
 
 /**
@@ -145,10 +147,136 @@ export async function POST(
       ? new Date(validatedData.openDate + 'T00:00:00')
       : new Date();
 
+    // Handle SHORT trade creation
+    if (validatedData.tradeType === 'SHORT') {
+      // Calculate available amount for SHORT
+      let availableAmount = 0;
+      let parentTrade = null;
+
+      // Check if SHORT is from a LONG position
+      if (validatedData.parentTradeId) {
+        parentTrade = await Trade.findById(validatedData.parentTradeId);
+
+        if (!parentTrade) {
+          return NextResponse.json(
+            { success: false, error: 'Parent LONG trade not found' },
+            { status: 404 }
+          );
+        }
+
+        // Verify parent trade belongs to the same portfolio
+        if (parentTrade.portfolioId !== portfolioId) {
+          return NextResponse.json(
+            { success: false, error: 'Parent trade does not belong to this portfolio' },
+            { status: 403 }
+          );
+        }
+
+        // Verify parent is a LONG trade
+        if (parentTrade.tradeType !== TradeType.LONG) {
+          return NextResponse.json(
+            { success: false, error: 'Parent trade must be a LONG position' },
+            { status: 400 }
+          );
+        }
+
+        // Verify parent is still open or filled
+        if (parentTrade.status !== TradeStatus.OPEN && parentTrade.status !== TradeStatus.FILLED) {
+          return NextResponse.json(
+            { success: false, error: 'Parent LONG trade is already closed' },
+            { status: 400 }
+          );
+        }
+
+        availableAmount = parentTrade.remainingAmount || parentTrade.amount;
+      } else {
+        // SHORT from initialCoins
+        const initialCoin = portfolio.initialCoins?.find(
+          (coin) => coin.symbol === validatedData.coinSymbol
+        );
+
+        if (initialCoin) {
+          availableAmount = initialCoin.amount;
+        }
+      }
+
+      // Validate amount
+      if (validatedData.amount > availableAmount) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Cannot sell more than available amount (${availableAmount} ${validatedData.coinSymbol})`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Get initial entry price and amount from parent LONG trade
+      let initialEntryPrice = validatedData.entryPrice;
+      let initialAmount = validatedData.amount;
+
+      if (parentTrade) {
+        initialEntryPrice = parentTrade.initialEntryPrice;
+        initialAmount = parentTrade.initialAmount;
+
+        // Update parent LONG trade's remaining amount
+        parentTrade.remainingAmount = (parentTrade.remainingAmount || parentTrade.amount) - validatedData.amount;
+        await parentTrade.save();
+      } else {
+        // Update initialCoins in portfolio
+        const initialCoinIndex = portfolio.initialCoins?.findIndex(
+          (coin) => coin.symbol === validatedData.coinSymbol
+        );
+
+        if (initialCoinIndex !== undefined && initialCoinIndex >= 0 && portfolio.initialCoins) {
+          portfolio.initialCoins[initialCoinIndex].amount -= validatedData.amount;
+
+          // Remove coin from initialCoins if amount becomes 0
+          if (portfolio.initialCoins[initialCoinIndex].amount <= 0) {
+            portfolio.initialCoins.splice(initialCoinIndex, 1);
+          }
+
+          await portfolio.save();
+        }
+      }
+
+      // Create SHORT trade
+      const trade = await Trade.create({
+        portfolioId,
+        coinSymbol: validatedData.coinSymbol,
+        status: TradeStatus.OPEN,
+        tradeType: TradeType.SHORT,
+        entryPrice: validatedData.entryPrice, // Sale price
+        depositPercent: validatedData.depositPercent,
+        entryFee: validatedData.entryFee,
+        exitFee: validatedData.entryFee,
+        sumPlusFee: validatedData.sumPlusFee,
+        amount: validatedData.amount,
+        originalAmount: validatedData.amount,
+        remainingAmount: validatedData.amount,
+        initialEntryPrice, // From parent LONG or current sale price
+        initialAmount, // From parent LONG or current amount
+        isPartialClose: false,
+        parentTradeId: validatedData.parentTradeId || undefined,
+        openDate: openDate,
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: trade,
+          message: 'SHORT trade created successfully',
+        },
+        { status: 201 }
+      );
+    }
+
+    // Handle LONG trade creation (existing logic)
     const trade = await Trade.create({
       portfolioId,
       coinSymbol: validatedData.coinSymbol,
       status: TradeStatus.OPEN,
+      tradeType: TradeType.LONG,
       entryPrice: validatedData.entryPrice,
       depositPercent: validatedData.depositPercent,
       entryFee: validatedData.entryFee,
@@ -157,6 +285,8 @@ export async function POST(
       amount: validatedData.amount,
       originalAmount: validatedData.amount, // Initialize for partial close support
       remainingAmount: validatedData.amount, // Initialize for partial close support
+      initialEntryPrice: validatedData.entryPrice, // Store initial entry price
+      initialAmount: validatedData.amount, // Store initial amount
       isPartialClose: false,
       openDate: openDate,
     });

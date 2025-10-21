@@ -27,12 +27,18 @@ export interface IPortfolioCoin {
   decimalPlaces: number;
 }
 
+export interface IInitialCoin {
+  symbol: string;
+  amount: number;
+}
+
 export interface IPortfolio extends Document {
   _id: string;
   userId: string;
   name: string;
   totalDeposit: number;
   coins: IPortfolioCoin[];
+  initialCoins?: IInitialCoin[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,11 +50,17 @@ export enum TradeStatus {
   CLOSED = 'closed',
 }
 
+export enum TradeType {
+  LONG = 'LONG',
+  SHORT = 'SHORT',
+}
+
 export interface ITrade extends Document {
   _id: string;
   portfolioId: string;
   coinSymbol: string;
   status: TradeStatus;
+  tradeType: TradeType; // LONG or SHORT
   entryPrice: number;
   depositPercent: number;
   entryFee: number;
@@ -58,6 +70,8 @@ export interface ITrade extends Document {
   amount: number; // Amount in coins (manual input from exchange)
   originalAmount?: number; // Initial amount of coins when trade was created
   remainingAmount?: number; // Remaining amount of coins not yet sold
+  initialEntryPrice: number; // Initial entry price from LONG position (never changes)
+  initialAmount: number; // Initial amount from LONG position (never changes)
   isPartialClose?: boolean; // True if this is a partial close record
   parentTradeId?: string; // Reference to parent trade for partial closes
   closedAmount?: number; // Amount of coins closed in this partial close
@@ -92,15 +106,18 @@ export interface CreatePortfolioInput {
   name: string;
   totalDeposit: number;
   coins: IPortfolioCoin[];
+  initialCoins?: IInitialCoin[];
 }
 
 export interface CreateTradeInput {
   coinSymbol: string;
+  tradeType?: TradeType;
   entryPrice: number;
   depositPercent: number;
   entryFee: number;
   amount: number;
   sumPlusFee: number;
+  parentTradeId?: string;
 }
 
 export interface UpdateTradeInput {
@@ -154,6 +171,7 @@ export interface CumulativeProfitPoint {
 export interface PortfolioStatistics {
   totalProfitUSD: number;
   totalProfitPercent: number;
+  totalFeesPaid: number; // Total fees paid across all closed trades
   winRate: number;
   avgProfitUSD: number;
   avgProfitPercent: number;
@@ -173,6 +191,24 @@ export interface PortfolioStatistics {
   topProfitableTrades: TradeWithProfit[];
   topLosingTrades: TradeWithProfit[];
   cumulativeProfit: CumulativeProfitPoint[];
+  // LONG-specific metrics
+  long: {
+    totalProfitUSD: number;
+    totalProfitPercent: number;
+    winRate: number;
+    avgProfitUSD: number;
+    avgProfitPercent: number;
+    totalTrades: number;
+  };
+  // SHORT-specific metrics
+  short: {
+    totalProfitCoins: Record<string, number>; // { BTC: 0.123, ETH: 1.456 }
+    totalProfitPercent: number;
+    winRate: number;
+    avgProfitCoins: Record<string, number>; // Average profit per coin
+    avgProfitPercent: number;
+    totalTrades: number;
+  };
 }
 
 // Export types

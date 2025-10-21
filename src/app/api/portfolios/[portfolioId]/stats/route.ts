@@ -11,6 +11,7 @@ import {
   CoinPerformance,
   CumulativeProfitPoint,
   TradeStatus,
+  TradeType,
   ITrade,
 } from '@/types';
 
@@ -22,12 +23,22 @@ interface RouteParams {
 
 /**
  * Calculate Profit % for a trade
- * Formula: ((exitPrice / entryPrice - 1) * 100) - entryFee - exitFee
+ * For LONG: ((exitPrice / entryPrice - 1) * 100) - entryFee - exitFee
+ * For SHORT: ((coinsBoughtBack / soldAmount - 1) * 100)
  * This gives the NET profit percentage AFTER all fees
  */
 const calculateProfitPercent = (trade: ITrade): number => {
   if (!trade.exitPrice) return 0;
 
+  if (trade.tradeType === TradeType.SHORT) {
+    // SHORT: profit % based on coins gained
+    const exitFeeVal = trade.exitFee || 0;
+    const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
+    const coinsBoughtBack = trade.sumPlusFee / buyBackPriceWithFee;
+    return ((coinsBoughtBack / trade.amount - 1) * 100);
+  }
+
+  // LONG: existing logic
   const priceChange = ((trade.exitPrice / trade.entryPrice - 1) * 100);
   const totalFees = trade.entryFee + (trade.exitFee || 0);
   const netProfitPercent = priceChange - totalFees;
@@ -36,7 +47,35 @@ const calculateProfitPercent = (trade: ITrade): number => {
 };
 
 /**
- * Calculate Profit USD for a closed trade
+ * Calculate Profit in Coins for SHORT trades
+ * Formula: (netReceived / buyBackPriceWithFee) - soldAmount
+ * This gives the NET profit in coins AFTER entry and exit fees
+ *
+ * IMPORTANT: sumPlusFee is now GROSS amount (before entry fee deduction)
+ * So we calculate: netReceived = sumPlusFee * (100 - entryFee) / 100
+ */
+const calculateProfitCoins = (trade: ITrade): number => {
+  if (!trade.exitPrice || trade.tradeType !== TradeType.SHORT) return 0;
+
+  // Calculate net received after entry fee (sale fee)
+  const entryFeeVal = trade.entryFee || 0;
+  const netReceived = trade.sumPlusFee * (100 - entryFeeVal) / 100;
+
+  // Calculate buy back price with exit fee
+  const exitFeeVal = trade.exitFee || 0;
+  const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
+
+  // Calculate coins bought back
+  const coinsBoughtBack = netReceived / buyBackPriceWithFee;
+
+  // Profit is the difference
+  const profitCoins = coinsBoughtBack - trade.amount;
+
+  return profitCoins;
+};
+
+/**
+ * Calculate Profit USD for a closed trade (LONG only)
  * Formula: (amount × exitPrice × (100 - exitFee) / 100) - sumPlusFee
  * This gives the NET profit in USD AFTER exit fees
  *
@@ -141,7 +180,7 @@ export async function GET(
 
     // Calculate profits for each closed trade
     const tradesWithProfit: TradeWithProfit[] = closedTrades.map((trade) => {
-      const profitUSD = calculateProfitUSD(trade);
+      const profitUSD = trade.tradeType === TradeType.LONG ? calculateProfitUSD(trade) : 0;
       const profitPercent = calculateProfitPercent(trade);
 
       return {
@@ -150,6 +189,10 @@ export async function GET(
         profitPercent,
       };
     });
+
+    // Separate LONG and SHORT trades
+    const longTrades = tradesWithProfit.filter(t => t.tradeType === TradeType.LONG);
+    const shortTrades = tradesWithProfit.filter(t => t.tradeType === TradeType.SHORT);
 
     // 1. Total Profit/Loss
     const totalProfitUSD = tradesWithProfit.reduce(
@@ -162,6 +205,23 @@ export async function GET(
       tradesWithProfit.length > 0
         ? sumOfProfitPercents / tradesWithProfit.length
         : 0;
+
+    // Calculate Total Fees Paid
+    const totalFeesPaid = closedTrades.reduce((sum, trade) => {
+      let tradeFees = 0;
+
+      // Entry fee: always present
+      const entryFee = (trade.sumPlusFee * trade.entryFee) / 100;
+      tradeFees += entryFee;
+
+      // Exit fee: only for closed trades with exitPrice
+      if (trade.exitPrice && trade.exitFee !== undefined) {
+        const exitFee = (trade.amount * trade.exitPrice * trade.exitFee) / 100;
+        tradeFees += exitFee;
+      }
+
+      return sum + tradeFees;
+    }, 0);
 
     // 2. Win Rate
     const profitableTrades = tradesWithProfit.filter((t) => t.profitUSD > 0);
@@ -287,9 +347,58 @@ export async function GET(
       }
     });
 
+    // 10. LONG-specific metrics
+    const longProfitableTrades = longTrades.filter(t => t.profitUSD > 0);
+    const longTotalProfitUSD = longTrades.reduce((sum, t) => sum + t.profitUSD, 0);
+    const longTotalProfitPercent = longTrades.length > 0
+      ? longTrades.reduce((sum, t) => sum + t.profitPercent, 0) / longTrades.length
+      : 0;
+    const longWinRate = longTrades.length > 0
+      ? (longProfitableTrades.length / longTrades.length) * 100
+      : 0;
+    const longAvgProfitUSD = longTrades.length > 0
+      ? longTotalProfitUSD / longTrades.length
+      : 0;
+    const longAvgProfitPercent = longTotalProfitPercent;
+
+    // 11. SHORT-specific metrics
+    const shortProfitCoins: Record<string, number> = {};
+    const shortAvgProfitCoins: Record<string, number> = {};
+
+    shortTrades.forEach(trade => {
+      const profitCoins = calculateProfitCoins(trade);
+      if (!shortProfitCoins[trade.coinSymbol]) {
+        shortProfitCoins[trade.coinSymbol] = 0;
+      }
+      shortProfitCoins[trade.coinSymbol] += profitCoins;
+    });
+
+    // Calculate average profit per coin
+    const shortCoinCounts: Record<string, number> = {};
+    shortTrades.forEach(trade => {
+      if (!shortCoinCounts[trade.coinSymbol]) {
+        shortCoinCounts[trade.coinSymbol] = 0;
+      }
+      shortCoinCounts[trade.coinSymbol]++;
+    });
+
+    Object.keys(shortProfitCoins).forEach(coinSymbol => {
+      shortAvgProfitCoins[coinSymbol] = shortProfitCoins[coinSymbol] / shortCoinCounts[coinSymbol];
+    });
+
+    const shortProfitableTrades = shortTrades.filter(t => calculateProfitCoins(t) > 0);
+    const shortTotalProfitPercent = shortTrades.length > 0
+      ? shortTrades.reduce((sum, t) => sum + t.profitPercent, 0) / shortTrades.length
+      : 0;
+    const shortWinRate = shortTrades.length > 0
+      ? (shortProfitableTrades.length / shortTrades.length) * 100
+      : 0;
+    const shortAvgProfitPercent = shortTotalProfitPercent;
+
     const statistics: PortfolioStatistics = {
       totalProfitUSD,
       totalProfitPercent: avgProfitPercent,
+      totalFeesPaid,
       winRate,
       avgProfitUSD,
       avgProfitPercent,
@@ -301,6 +410,22 @@ export async function GET(
       topProfitableTrades,
       topLosingTrades,
       cumulativeProfit,
+      long: {
+        totalProfitUSD: longTotalProfitUSD,
+        totalProfitPercent: longTotalProfitPercent,
+        winRate: longWinRate,
+        avgProfitUSD: longAvgProfitUSD,
+        avgProfitPercent: longAvgProfitPercent,
+        totalTrades: longTrades.length,
+      },
+      short: {
+        totalProfitCoins: shortProfitCoins,
+        totalProfitPercent: shortTotalProfitPercent,
+        winRate: shortWinRate,
+        avgProfitCoins: shortAvgProfitCoins,
+        avgProfitPercent: shortAvgProfitPercent,
+        totalTrades: shortTrades.length,
+      },
     };
 
     return NextResponse.json({

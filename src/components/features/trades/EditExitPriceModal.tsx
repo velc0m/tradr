@@ -91,20 +91,21 @@ export function EditExitPriceModal({
 
     if (exit === 0) return null;
 
-    const remainingAmount = trade.remainingAmount ?? trade.amount;
-    const originalAmount = trade.originalAmount ?? trade.amount;
-    const proportion = remainingAmount / originalAmount;
-
     if (trade.tradeType === TradeType.SHORT) {
       // SHORT: Profit in coins
-      // Calculate how many coins can be bought back with the proportional sale amount
-      const proportionalSaleAmount = trade.sumPlusFee * proportion;
-      const buyBackPriceWithFee = exit * (100 + exitFeeVal) / 100;
-      const coinsBoughtBack = proportionalSaleAmount / buyBackPriceWithFee;
-      const profitCoins = coinsBoughtBack - remainingAmount;
+      // Calculate net received after entry fee
+      const entryFeeVal = trade.entryFee || 0;
+      const netReceived = trade.sumPlusFee * (100 - entryFeeVal) / 100;
 
-      // Profit %: based on initial entry price vs buy back price
-      const profitPercent = ((coinsBoughtBack / remainingAmount - 1) * 100);
+      // Calculate buy back price with exit fee
+      const buyBackPriceWithFee = exit * (100 + exitFeeVal) / 100;
+
+      // Calculate coins bought back
+      const coinsBoughtBack = netReceived / buyBackPriceWithFee;
+      const profitCoins = coinsBoughtBack - trade.amount;
+
+      // Profit %
+      const profitPercent = ((coinsBoughtBack / trade.amount - 1) * 100);
 
       return {
         type: 'coins' as const,
@@ -116,9 +117,8 @@ export function EditExitPriceModal({
       // LONG: Profit in USD
       const entry = trade.entryPrice;
       const entryFeeVal = trade.entryFee;
-      const proportionalEntryCost = trade.sumPlusFee * proportion;
-      const exitValue = remainingAmount * exit * (100 - exitFeeVal) / 100;
-      const profitUSD = exitValue - proportionalEntryCost;
+      const exitValue = trade.amount * exit * (100 - exitFeeVal) / 100;
+      const profitUSD = exitValue - trade.sumPlusFee;
 
       // Profit %
       const profitPercent = ((exit / entry - 1) * 100 - entryFeeVal - exitFeeVal);
@@ -251,14 +251,8 @@ export function EditExitPriceModal({
               <div className="text-sm text-muted-foreground space-y-1">
                 <div>Coin: {trade.coinSymbol}</div>
                 <div>Entry Price: ${formatPrice(trade.entryPrice)}</div>
-                <div>Original Amount: {formatAmount(trade.originalAmount ?? trade.amount)}</div>
-                <div className="font-medium text-yellow-400">
-                  Remaining Amount: {formatAmount(trade.remainingAmount ?? trade.amount)}
-                </div>
+                <div>Amount: {formatAmount(trade.amount)}</div>
               </div>
-              <p className="text-xs text-muted-foreground italic">
-                Setting exit price for remaining {formatAmount(trade.remainingAmount ?? trade.amount)} {trade.coinSymbol}
-              </p>
             </div>
 
             <div className="grid gap-2">

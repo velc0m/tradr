@@ -31,7 +31,7 @@ import { EditTradeDialog } from '@/components/features/trades/EditTradeDialog';
 import { EditExitPriceModal } from '@/components/features/trades/EditExitPriceModal';
 import { MarkAsFilledDialog } from '@/components/features/trades/MarkAsFilledDialog';
 import { CloseTradeDialog } from '@/components/features/trades/CloseTradeDialog';
-import { PartialCloseModal } from '@/components/features/trades/PartialCloseModal';
+import { SplitTradeModal } from '@/components/features/trades/SplitTradeModal';
 import { GroupedClosedTradeRow, TradeGroup } from '@/components/features/trades/GroupedClosedTradeRow';
 import { useToast } from '@/components/ui/use-toast';
 import { IPortfolio, ITrade, TradeStatus, TradeType } from '@/types';
@@ -71,11 +71,11 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   const [showEditExitPriceModal, setShowEditExitPriceModal] = useState(false);
   const [showMarkAsFilledDialog, setShowMarkAsFilledDialog] = useState(false);
   const [showCloseTradeDialog, setShowCloseTradeDialog] = useState(false);
-  const [showPartialCloseModal, setShowPartialCloseModal] = useState(false);
+  const [showSplitModal, setShowSplitModal] = useState(false);
   const [tradeToEdit, setTradeToEdit] = useState<ITrade | null>(null);
   const [tradeToFill, setTradeToFill] = useState<ITrade | null>(null);
   const [tradeToClose, setTradeToClose] = useState<ITrade | null>(null);
-  const [tradeToPartialClose, setTradeToPartialClose] = useState<ITrade | null>(null);
+  const [tradeToSplit, setTradeToSplit] = useState<ITrade | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTradeDialogOpen, setDeleteTradeDialogOpen] = useState(false);
   const [tradeToDelete, setTradeToDelete] = useState<ITrade | null>(null);
@@ -180,7 +180,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
       tradeType: TradeType.SHORT,
       parentTradeId: parentTrade._id,
       salePrice: parentTrade.exitPrice,
-      maxAmount: parentTrade.remainingAmount || parentTrade.amount,
+      maxAmount: parentTrade.amount,
     });
     setShowCreateTradeModal(true);
   };
@@ -272,29 +272,10 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     );
   };
 
-  // Calculate Profit USD for REMAINING amount in Open Trades
-  // For Closed Trades, uses the actual amount that was closed
+  // Calculate Profit USD
   const calculateProfitUSD = (trade: ITrade): number | null => {
     if (!trade.exitPrice) return null;
 
-    // For open/filled trades, use remaining amount
-    if (trade.status === TradeStatus.OPEN || trade.status === TradeStatus.FILLED) {
-      const remainingAmount = trade.remainingAmount ?? trade.amount;
-      const originalAmount = trade.originalAmount ?? trade.amount;
-
-      // Proportional entry cost for remaining amount
-      const proportion = remainingAmount / originalAmount;
-      const proportionalEntryCost = trade.sumPlusFee * proportion;
-
-      // Exit value for remaining amount
-      const exitValue = remainingAmount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
-
-      const profitUSD = exitValue - proportionalEntryCost;
-
-      return profitUSD;
-    }
-
-    // For closed trades, use actual amount (what was closed)
     const exitValue = trade.amount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
     return exitValue - trade.sumPlusFee;
   };
@@ -342,12 +323,33 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
   );
   const closedTrades = trades.filter((t) => t.status === TradeStatus.CLOSED);
 
-  // Group open trades: LONG with their SHORT children
+  // Group open trades: LONG with their SHORT children, and split positions
   const groupedOpenTrades = useMemo(() => {
-    const grouped: Array<{ parent: ITrade; children: ITrade[] }> = [];
+    const grouped: Array<{
+      parent: ITrade;
+      children: ITrade[];
+      splitSiblings?: ITrade[]; // Other trades from the same split
+      splitInfo?: { part: number; total: number }; // Part X of Y
+    }> = [];
     const processedIds = new Set<string>();
 
-    // First, collect all LONG trades and their SHORT children
+    // First, group split positions by splitGroupId
+    const splitGroups = new Map<string, ITrade[]>();
+    openTrades.forEach(trade => {
+      if (trade.splitGroupId) {
+        if (!splitGroups.has(trade.splitGroupId)) {
+          splitGroups.set(trade.splitGroupId, []);
+        }
+        splitGroups.get(trade.splitGroupId)!.push(trade);
+      }
+    });
+
+    // Sort each split group by creation time (newest first)
+    splitGroups.forEach((trades) => {
+      trades.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    });
+
+    // Now process trades
     const longTrades = openTrades.filter(t => t.tradeType === TradeType.LONG);
 
     longTrades.forEach(longTrade => {
@@ -356,9 +358,23 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
         t => t.tradeType === TradeType.SHORT && t.parentTradeId === longTrade._id
       );
 
+      // Check if this trade is part of a split group
+      const splitSiblings = longTrade.splitGroupId
+        ? (splitGroups.get(longTrade.splitGroupId) || []).filter(t => t._id !== longTrade._id)
+        : [];
+
+      const splitInfo = longTrade.splitGroupId && splitGroups.has(longTrade.splitGroupId)
+        ? {
+            part: splitGroups.get(longTrade.splitGroupId)!.findIndex(t => t._id === longTrade._id) + 1,
+            total: splitGroups.get(longTrade.splitGroupId)!.length,
+          }
+        : undefined;
+
       grouped.push({
         parent: longTrade,
         children: shortChildren,
+        splitSiblings: splitSiblings.length > 0 ? splitSiblings : undefined,
+        splitInfo,
       });
 
       // Mark all as processed
@@ -369,9 +385,22 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     // Add standalone SHORT trades (from initialCoins, not from LONG)
     openTrades.forEach(trade => {
       if (trade.tradeType === TradeType.SHORT && !processedIds.has(trade._id)) {
+        const splitSiblings = trade.splitGroupId
+          ? (splitGroups.get(trade.splitGroupId) || []).filter(t => t._id !== trade._id)
+          : [];
+
+        const splitInfo = trade.splitGroupId && splitGroups.has(trade.splitGroupId)
+          ? {
+              part: splitGroups.get(trade.splitGroupId)!.findIndex(t => t._id === trade._id) + 1,
+              total: splitGroups.get(trade.splitGroupId)!.length,
+            }
+          : undefined;
+
         grouped.push({
           parent: trade,
           children: [],
+          splitSiblings: splitSiblings.length > 0 ? splitSiblings : undefined,
+          splitInfo,
         });
         processedIds.add(trade._id);
       }
@@ -380,142 +409,17 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
     return grouped;
   }, [openTrades]);
 
-  // Group closed trades by parent
+  // Group closed trades - simple grouping, no partial close logic
   const groupedClosedTrades = useMemo(() => {
     const groups: TradeGroup[] = [];
-    const processedIds = new Set<string>();
 
-    // First, find all partial closes and their parents
-    const partialCloses = closedTrades.filter(t => t.isPartialClose && t.parentTradeId);
-
-    // Group by parentTradeId
-    const parentMap = new Map<string, ITrade[]>();
-    partialCloses.forEach(part => {
-      if (!part.parentTradeId) return;
-
-      if (!parentMap.has(part.parentTradeId)) {
-        parentMap.set(part.parentTradeId, []);
-      }
-      parentMap.get(part.parentTradeId)!.push(part);
-    });
-
-    // Process each parent with its parts
-    parentMap.forEach((parts, parentId) => {
-      // Find parent trade
-      const parentTrade = closedTrades.find(t => t._id === parentId);
-      if (!parentTrade) return;
-
-      // Mark all as processed
-      processedIds.add(parentId);
-      parts.forEach(p => processedIds.add(p._id));
-
-      // All parts to calculate summary (including parent if it's closed with remaining amount)
-      const allParts = [...parts];
-
-      // If parent is closed and has remainingAmount, create virtual part for it
-      if (parentTrade.status === TradeStatus.CLOSED && parentTrade.remainingAmount) {
-        // Round to avoid floating point issues (0.999999... → 1.0)
-        const remainingAmount = Math.round(parentTrade.remainingAmount * 100000000) / 100000000;
-        const originalAmount = parentTrade.originalAmount ?? parentTrade.amount;
-
-        // Calculate PROPORTIONAL sumPlusFee for remaining amount
-        const proportion = remainingAmount / originalAmount;
-        const proportionalSumPlusFee = parentTrade.sumPlusFee * proportion;
-
-        // Create virtual part for parent's remaining close
-        const virtualPart: ITrade = {
-          ...parentTrade,
-          _id: parentTrade._id + '-remaining',
-          amount: remainingAmount,
-          sumPlusFee: proportionalSumPlusFee,  // ← PROPORTIONAL!
-          isPartialClose: true,
-          closedAmount: remainingAmount,
-        } as ITrade;
-
-        allParts.push(virtualPart);
-      }
-
-      // Calculate summary from ALL parts
-      const totalAmount = allParts.reduce((sum, p) => sum + p.amount, 0);
-      const totalValue = allParts.reduce((sum, p) => sum + (p.amount * (p.exitPrice || 0)), 0);
-      const avgExitPrice = totalAmount > 0 ? totalValue / totalAmount : 0;
-
-      const totalProfitUSD = allParts.reduce((sum, p) => {
-        const profit = calculateProfitUSD(p);
-        return sum + (profit || 0);
-      }, 0);
-
-      const totalProfitPercent = allParts.reduce((sum, p) => {
-        const percent = calculateProfitPercent(p);
-        return sum + (percent || 0);
-      }, 0) / allParts.length;
-
-      const closeDates = allParts
-        .map(p => p.closeDate)
-        .filter(d => d)
-        .map(d => new Date(d!));
-
-      const firstCloseDate = closeDates.length > 0
-        ? new Date(Math.min(...closeDates.map(d => d.getTime())))
-        : new Date();
-
-      const lastCloseDate = closeDates.length > 0
-        ? new Date(Math.max(...closeDates.map(d => d.getTime())))
-        : new Date();
-
-      groups.push({
-        type: 'multi',
-        mainTrade: parentTrade,
-        parts: allParts.sort((a, b) =>
-          (a.closeDate ? new Date(a.closeDate).getTime() : 0) -
-          (b.closeDate ? new Date(b.closeDate).getTime() : 0)
-        ),
-        summary: {
-          totalAmount,
-          avgExitPrice,
-          totalProfitPercent,
-          totalProfitUSD,
-          firstCloseDate,
-          lastCloseDate,
-        },
-      });
-    });
-
-    // Process remaining trades that are not partial closes and not parents
+    // Each closed trade is shown as a separate "full" trade
     closedTrades.forEach((trade) => {
-      if (processedIds.has(trade._id)) return;
-
-      // If this is a partial close but parent not found (still in Open Trades),
-      // show it as a single-part multi group
-      if (trade.isPartialClose) {
-        processedIds.add(trade._id);
-
-        // Calculate summary for single part
-        const profitUSD = calculateProfitUSD(trade);
-        const profitPercent = calculateProfitPercent(trade);
-
-        groups.push({
-          type: 'multi',
-          mainTrade: trade,
-          parts: [trade],
-          summary: {
-            totalAmount: trade.amount,
-            avgExitPrice: trade.exitPrice || 0,
-            totalProfitPercent: profitPercent || 0,
-            totalProfitUSD: profitUSD || 0,
-            firstCloseDate: trade.closeDate ? new Date(trade.closeDate) : new Date(),
-            lastCloseDate: trade.closeDate ? new Date(trade.closeDate) : new Date(),
-          },
-        });
-      } else {
-        // This is a full close (no partial closes associated)
-        processedIds.add(trade._id);
-        groups.push({
-          type: 'full',
-          mainTrade: trade,
-          parts: [],
-        });
-      }
+      groups.push({
+        type: 'full',
+        mainTrade: trade,
+        parts: [],
+      });
     });
 
     return groups;
@@ -784,8 +688,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                         <TableHead className="min-w-[100px]">Date</TableHead>
                         <TableHead className="min-w-[90px]">Entry Price</TableHead>
                         <TableHead className="min-w-[90px]">Sum+Fee</TableHead>
-                        <TableHead className="min-w-[110px]">Original</TableHead>
-                        <TableHead className="min-w-[110px]">Remaining</TableHead>
+                        <TableHead className="min-w-[110px]">Amount</TableHead>
                         <TableHead className="min-w-[90px]">Exit Price</TableHead>
                         <TableHead className="min-w-[80px]">Profit %</TableHead>
                         <TableHead className="min-w-[80px]">Profit $</TableHead>
@@ -794,11 +697,9 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                     </TableHeader>
                     <TableBody>
                       {groupedOpenTrades.map((group) => {
-                        const renderTradeRow = (trade: ITrade, isChild: boolean = false) => {
+                        const renderTradeRow = (trade: ITrade, isChild: boolean = false, splitInfo?: { part: number; total: number }) => {
                           const profitPercent = calculateProfitPercent(trade);
                           const profitUSD = calculateProfitUSD(trade);
-                          const originalAmount = trade.originalAmount ?? trade.amount;
-                          const remainingAmount = trade.remainingAmount ?? trade.amount;
 
                           return (
                             <TableRow key={trade._id} className={isChild ? 'bg-muted/30' : ''}>
@@ -808,12 +709,19 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                                     <CornerDownRight className="h-4 w-4 text-muted-foreground" />
                                   )}
                                   <div>
-                                    {trade.coinSymbol}
-                                    {trade.tradeType === TradeType.SHORT && (
-                                      <span className="ml-2 text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
-                                        SHORT
-                                      </span>
-                                    )}
+                                    <div className="flex items-center gap-1.5">
+                                      <span>{trade.coinSymbol}</span>
+                                      {trade.tradeType === TradeType.SHORT && (
+                                        <span className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
+                                          SHORT
+                                        </span>
+                                      )}
+                                      {splitInfo && (
+                                        <span className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">
+                                          Split {splitInfo.part}/{splitInfo.total}
+                                        </span>
+                                      )}
+                                    </div>
                                     {isChild && (
                                       <div className="text-xs text-muted-foreground mt-0.5">
                                         ↳ SHORT for parent LONG
@@ -847,17 +755,7 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                             <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
                             <TableCell><BlurredAmount amount={trade.sumPlusFee} /></TableCell>
                             <TableCell>
-                              {formatAmount(originalAmount)}
-                            </TableCell>
-                            <TableCell>
-                              <span className={remainingAmount < originalAmount ? 'text-yellow-500 font-medium' : ''}>
-                                {formatAmount(remainingAmount)}
-                              </span>
-                              {remainingAmount < originalAmount && (
-                                <span className="text-xs text-yellow-500/60 block">
-                                  ({((remainingAmount / originalAmount) * 100).toFixed(1)}% left)
-                                </span>
-                              )}
+                              {formatAmount(trade.amount)}
                             </TableCell>
                             <TableCell>
                               {trade.exitPrice ? `$${formatPrice(trade.exitPrice)}` : '-'}
@@ -933,19 +831,23 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                                     >
                                       <DollarSign className="h-4 w-4" />
                                     </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => {
-                                        setTradeToPartialClose(trade);
-                                        setShowPartialCloseModal(true);
-                                      }}
-                                      title="Partial Close"
-                                    >
-                                      <MinusCircle className="h-4 w-4 text-yellow-500" />
-                                    </Button>
-                                    {/* Open SHORT button - only for LONG positions with remaining amount */}
-                                    {trade.tradeType === TradeType.LONG && remainingAmount > 0 && (
+                                    {/* Split button - for LONG or standalone SHORT (not SHORT from LONG) */}
+                                    {(trade.tradeType === TradeType.LONG ||
+                                      (trade.tradeType === TradeType.SHORT && !trade.parentTradeId)) && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          setTradeToSplit(trade);
+                                          setShowSplitModal(true);
+                                        }}
+                                        title="Split Position"
+                                      >
+                                        <MinusCircle className="h-4 w-4 text-yellow-500" />
+                                      </Button>
+                                    )}
+                                    {/* Open SHORT button - only for LONG positions */}
+                                    {trade.tradeType === TradeType.LONG && (
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -977,8 +879,8 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
                       // Render parent trade and its children
                       return (
                         <>
-                          {renderTradeRow(group.parent, false)}
-                          {group.children.map(child => renderTradeRow(child, true))}
+                          {renderTradeRow(group.parent, false, group.splitInfo)}
+                          {group.children.map(child => renderTradeRow(child, true, undefined))}
                         </>
                       );
                     })}
@@ -1106,10 +1008,10 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
         onSuccess={handleTradeUpdated}
       />
 
-      <PartialCloseModal
-        open={showPartialCloseModal}
-        onOpenChange={setShowPartialCloseModal}
-        trade={tradeToPartialClose}
+      <SplitTradeModal
+        open={showSplitModal}
+        onOpenChange={setShowSplitModal}
+        trade={tradeToSplit}
         onSuccess={() => {
           fetchTrades();
         }}

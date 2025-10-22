@@ -188,7 +188,7 @@ export async function POST(
           );
         }
 
-        availableAmount = parentTrade.remainingAmount || parentTrade.amount;
+        availableAmount = parentTrade.amount;
       } else {
         // SHORT from initialCoins
         const initialCoin = portfolio.initialCoins?.find(
@@ -219,8 +219,14 @@ export async function POST(
         initialEntryPrice = parentTrade.initialEntryPrice;
         initialAmount = parentTrade.initialAmount;
 
-        // Update parent LONG trade's remaining amount
-        parentTrade.remainingAmount = (parentTrade.remainingAmount || parentTrade.amount) - validatedData.amount;
+        // Reduce parent LONG trade's amount and sumPlusFee proportionally
+        const proportion = validatedData.amount / parentTrade.amount;
+        const reducedSumPlusFee = parentTrade.sumPlusFee * proportion;
+
+        parentTrade.amount -= validatedData.amount;
+        parentTrade.sumPlusFee -= reducedSumPlusFee;
+        parentTrade.entryPrice = parentTrade.amount > 0 ? parentTrade.sumPlusFee / parentTrade.amount : parentTrade.entryPrice;
+
         await parentTrade.save();
       } else {
         // Update initialCoins in portfolio
@@ -252,11 +258,8 @@ export async function POST(
         exitFee: validatedData.entryFee,
         sumPlusFee: validatedData.sumPlusFee,
         amount: validatedData.amount,
-        originalAmount: validatedData.amount,
-        remainingAmount: validatedData.amount,
         initialEntryPrice, // From parent LONG or current sale price
         initialAmount, // From parent LONG or current amount
-        isPartialClose: false,
         parentTradeId: validatedData.parentTradeId || undefined,
         openDate: openDate,
       });
@@ -283,11 +286,8 @@ export async function POST(
       exitFee: validatedData.entryFee,
       sumPlusFee: validatedData.sumPlusFee,
       amount: validatedData.amount,
-      originalAmount: validatedData.amount, // Initialize for partial close support
-      remainingAmount: validatedData.amount, // Initialize for partial close support
       initialEntryPrice: validatedData.entryPrice, // Store initial entry price
       initialAmount: validatedData.amount, // Store initial amount
-      isPartialClose: false,
       openDate: openDate,
     });
 

@@ -375,52 +375,6 @@ describe('Trade Model Tests', () => {
     });
   });
 
-  describe('Partial Close Fields', () => {
-    it('should support isPartialClose flag', async () => {
-      const tradeData = {
-        portfolioId: testPortfolioId,
-        coinSymbol: 'BTC',
-        tradeType: TradeType.LONG,
-        entryPrice: 100000,
-        depositPercent: 10,
-        entryFee: 1,
-        sumPlusFee: 1010,
-        amount: 0.01,
-        initialEntryPrice: 100000,
-        initialAmount: 0.01,
-        isPartialClose: true,
-        closedAmount: 0.003,
-      };
-
-      const trade = await Trade.create(tradeData);
-
-      expect(trade.isPartialClose).toBe(true);
-      expect(trade.closedAmount).toBe(0.003);
-    });
-
-    it('should support remainingAmount for partial closes', async () => {
-      const tradeData = {
-        portfolioId: testPortfolioId,
-        coinSymbol: 'BTC',
-        tradeType: TradeType.LONG,
-        entryPrice: 100000,
-        depositPercent: 10,
-        entryFee: 1,
-        sumPlusFee: 1010,
-        amount: 0.01,
-        initialEntryPrice: 100000,
-        initialAmount: 0.01,
-        originalAmount: 0.01,
-        remainingAmount: 0.007, // After closing 0.003
-      };
-
-      const trade = await Trade.create(tradeData);
-
-      expect(trade.originalAmount).toBe(0.01);
-      expect(trade.remainingAmount).toBe(0.007);
-    });
-  });
-
   describe('Trade Status Transitions', () => {
     it('should transition from OPEN to FILLED to CLOSED', async () => {
       // Create OPEN trade

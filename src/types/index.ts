@@ -68,13 +68,12 @@ export interface ITrade extends Document {
   exitPrice?: number;
   exitFee?: number;
   amount: number; // Amount in coins (manual input from exchange)
-  originalAmount?: number; // Initial amount of coins when trade was created
-  remainingAmount?: number; // Remaining amount of coins not yet sold
   initialEntryPrice: number; // Initial entry price from LONG position (never changes)
   initialAmount: number; // Initial amount from LONG position (never changes)
-  isPartialClose?: boolean; // True if this is a partial close record
-  parentTradeId?: string; // Reference to parent trade for partial closes
-  closedAmount?: number; // Amount of coins closed in this partial close
+  parentTradeId?: string; // Reference to parent LONG trade for SHORT positions
+  isSplit?: boolean; // True if this trade was split into multiple positions
+  splitFromTradeId?: string; // Reference to original trade that was split
+  splitGroupId?: string; // Unique ID for grouping split positions together
   openDate: Date;
   filledDate?: Date; // Date when trade was filled on exchange
   closeDate?: Date;
@@ -134,11 +133,8 @@ export interface UpdateExitPriceInput {
   exitFee: number;
 }
 
-export interface PartialCloseInput {
-  amountToClose: number;
-  exitPrice: number;
-  exitFee: number;
-  closeDate: string;
+export interface SplitTradeInput {
+  amounts: number[]; // Array of amounts for each split part
 }
 
 // Portfolio Statistics types

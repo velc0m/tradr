@@ -207,9 +207,9 @@ export function CreateTradeModal({
     }
 
     if (openLongTrades.length > 0) {
-      // Sum up remaining amounts from all open LONG trades
+      // Sum up amounts from all open LONG trades
       openLongTrades.forEach((trade) => {
-        availableAmount += trade.remainingAmount || trade.amount;
+        availableAmount += trade.amount;
       });
     }
 

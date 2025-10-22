@@ -65,14 +65,6 @@ const TradeSchema = new Schema<ITrade>(
       required: [true, 'Amount is required'],
       min: [0, 'Amount cannot be negative'],
     },
-    originalAmount: {
-      type: Number,
-      min: [0, 'Original amount cannot be negative'],
-    },
-    remainingAmount: {
-      type: Number,
-      min: [0, 'Remaining amount cannot be negative'],
-    },
     initialEntryPrice: {
       type: Number,
       required: [true, 'Initial entry price is required'],
@@ -83,17 +75,20 @@ const TradeSchema = new Schema<ITrade>(
       required: [true, 'Initial amount is required'],
       min: [0, 'Initial amount cannot be negative'],
     },
-    isPartialClose: {
-      type: Boolean,
-      default: false,
-    },
     parentTradeId: {
       type: String,
       ref: 'Trade',
     },
-    closedAmount: {
-      type: Number,
-      min: [0, 'Closed amount cannot be negative'],
+    isSplit: {
+      type: Boolean,
+      default: false,
+    },
+    splitFromTradeId: {
+      type: String,
+      ref: 'Trade',
+    },
+    splitGroupId: {
+      type: String,
     },
     openDate: {
       type: Date,

@@ -78,54 +78,15 @@ const calculateProfitCoins = (trade: ITrade): number => {
  * Calculate Profit USD for a closed trade (LONG only)
  * Formula: (amount × exitPrice × (100 - exitFee) / 100) - sumPlusFee
  * This gives the NET profit in USD AFTER exit fees
- *
- * IMPORTANT: Handles partial closes correctly
- * - For partial close trades: use actual amount and sumPlusFee from the trade
- * - For parent trades that were partially closed: use remainingAmount and proportional sumPlusFee
  */
-const calculateProfitUSD = (trade: ITrade, logDetails: boolean = false): number => {
+const calculateProfitUSD = (trade: ITrade): number => {
   if (!trade.exitPrice) return 0;
-
-  let amountUsed = trade.amount;
-  let sumPlusFeeUsed = trade.sumPlusFee;
-
-  // For parent trades that were partially closed, we need to use remainingAmount
-  // not the original amount, and proportional sumPlusFee
-  if (!trade.isPartialClose && trade.remainingAmount && trade.originalAmount) {
-    if (trade.remainingAmount < trade.originalAmount) {
-      // This is the final close of a parent trade - use remaining amount
-      amountUsed = trade.remainingAmount;
-      const proportion = trade.remainingAmount / trade.originalAmount;
-      sumPlusFeeUsed = trade.sumPlusFee * proportion;
-
-      if (logDetails) {
-        console.log('  [Parent Trade Final Close - Using Proportional Calculation]');
-        console.log(`  - Original Amount: ${trade.originalAmount}`);
-        console.log(`  - Remaining Amount: ${trade.remainingAmount}`);
-        console.log(`  - Proportion: ${proportion.toFixed(4)} (${trade.remainingAmount}/${trade.originalAmount})`);
-        console.log(`  - Original SumPlusFee: $${trade.sumPlusFee.toFixed(2)}`);
-        console.log(`  - Proportional SumPlusFee: $${sumPlusFeeUsed.toFixed(2)}`);
-      }
-    }
-  }
 
   const exitFeePercent = trade.exitFee || 0;
   const exitFeeMultiplier = (100 - exitFeePercent) / 100;
-  const grossExitValue = amountUsed * trade.exitPrice;
+  const grossExitValue = trade.amount * trade.exitPrice;
   const netExitValue = grossExitValue * exitFeeMultiplier;
-  const profitUSD = netExitValue - sumPlusFeeUsed;
-
-  if (logDetails) {
-    console.log('  [Profit USD Calculation Step-by-Step]');
-    console.log(`  1. Amount Used: ${amountUsed}`);
-    console.log(`  2. Exit Price: $${trade.exitPrice}`);
-    console.log(`  3. Gross Exit Value: ${amountUsed} × $${trade.exitPrice} = $${grossExitValue.toFixed(2)}`);
-    console.log(`  4. Exit Fee: ${exitFeePercent}%`);
-    console.log(`  5. Exit Fee Multiplier: (100 - ${exitFeePercent}) / 100 = ${exitFeeMultiplier}`);
-    console.log(`  6. Net Exit Value (after exit fee): $${grossExitValue.toFixed(2)} × ${exitFeeMultiplier} = $${netExitValue.toFixed(2)}`);
-    console.log(`  7. Entry Cost (sumPlusFee): $${sumPlusFeeUsed.toFixed(2)}`);
-    console.log(`  8. Profit USD: $${netExitValue.toFixed(2)} - $${sumPlusFeeUsed.toFixed(2)} = $${profitUSD.toFixed(2)}`);
-  }
+  const profitUSD = netExitValue - trade.sumPlusFee;
 
   return profitUSD;
 };

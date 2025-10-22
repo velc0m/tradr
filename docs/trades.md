@@ -7,8 +7,8 @@ Trades represent cryptocurrency positions in a portfolio. They follow a lifecycl
 
 ```
 OPEN → FILLED → CLOSED
-  ↓       ↓
-  └───────┴─→ Can be partially closed
+         ↓
+         └─→ Can be split into 2-5 independent positions
 ```
 
 ### Trade Statuses
@@ -35,12 +35,17 @@ interface ITrade {
   exitPrice?: number;          // Exit price in USD (null if not set)
   exitFee?: number;           // Exit fee % (null if not set)
 
-  // Partial close tracking
-  originalAmount?: number;     // Original amount before partial closes
-  remainingAmount?: number;    // Amount still in position
-  isPartialClose?: boolean;    // True if this is a partial close record
-  parentTradeId?: string;      // Reference to parent trade (for partial closes)
-  closedAmount?: number;       // Amount closed in this partial close
+  // Reference tracking (never changes)
+  initialEntryPrice: number;   // Original entry price (preserved)
+  initialAmount: number;       // Original amount (preserved)
+
+  // Relationships
+  parentTradeId?: string;      // For SHORT derived from LONG
+
+  // Split tracking
+  isSplit?: boolean;           // True if this trade was split
+  splitFromTradeId?: string;   // References original if this is a split
+  splitGroupId?: string;       // UUID shared by all splits from same original
 
   // Dates
   openDate: Date;             // When limit order was placed
@@ -116,13 +121,31 @@ Changes:
 
 ## Closing a Trade
 
-Two ways to close:
-
-### 1. Full Close
 Set exit price + manually change status to CLOSED via edit dialog.
 
-### 2. Partial Close (Recommended)
-See [partial-closes.md](./partial-closes.md) for detailed documentation.
+## Splitting a Position
+
+**POST** `/api/trades/[id]/split`
+
+Split a FILLED position into 2-5 independent positions:
+
+```typescript
+{
+  amounts: [0.5, 0.3, 0.2]  // Must sum to original trade amount
+}
+```
+
+Behavior:
+- Each split inherits `entryPrice`, `entryFee`, `openDate`, `filledDate` from original
+- Each split gets proportional `amount` and `sumPlusFee`
+- All splits share a common `splitGroupId` (UUID)
+- Original trade marked as `isSplit: true` and status set to CLOSED
+- Visual indicators show "Split 1/3", "Split 2/3", etc. in UI
+
+Restrictions:
+- Only FILLED trades can be split
+- Cannot split SHORT positions derived from LONG (with parentTradeId)
+- Amounts must sum to original trade amount (with small floating-point tolerance)
 
 ## Important Formulas
 

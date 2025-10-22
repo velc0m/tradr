@@ -125,16 +125,13 @@ Also deletes all associated trades.
 
 ---
 
-### Partial Close
-**POST** `/api/trades/[id]/partial-close`
+### Split Position
+**POST** `/api/trades/[id]/split`
 
 **Body:**
 ```typescript
 {
-  amountToClose: number;
-  exitPrice: number;
-  exitFee: number;
-  closeDate: string;  // YYYY-MM-DD
+  amounts: number[];  // Array of 2-5 amounts that must sum to trade amount
 }
 ```
 
@@ -143,13 +140,17 @@ Also deletes all associated trades.
 {
   success: true,
   data: {
-    parentTrade: ITrade;
-    closedTrade: ITrade;
-  }
+    originalTrade: ITrade;      // Marked as isSplit: true, status: CLOSED
+    splitTrades: ITrade[];      // New independent positions
+  },
+  message: "Trade successfully split into N positions"
 }
 ```
 
-See [partial-closes.md](./partial-closes.md) for details.
+**Restrictions:**
+- Only FILLED trades can be split
+- Cannot split SHORT positions derived from LONG (with parentTradeId)
+- Amounts must sum to original trade amount (small floating-point tolerance allowed)
 
 ---
 

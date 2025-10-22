@@ -182,7 +182,6 @@ describe('Trade API Endpoints', () => {
         entryFee: 1,
         sumPlusFee: 5050,
         amount: 0.05,
-        remainingAmount: 0.05,
         initialEntryPrice: 100000,
         initialAmount: 0.05,
         openDate: new Date(),
@@ -219,9 +218,9 @@ describe('Trade API Endpoints', () => {
       expect(data.data.parentTradeId).toBe(parentLong._id.toString());
       expect(data.data.amount).toBe(0.02);
 
-      // Verify parent LONG remainingAmount was updated
+      // Verify parent LONG amount was updated
       const updatedParent = await Trade.findById(parentLong._id);
-      expect(updatedParent?.remainingAmount).toBeCloseTo(0.03, 4); // 0.05 - 0.02
+      expect(updatedParent?.amount).toBeCloseTo(0.03, 4); // 0.05 - 0.02
     });
 
     it('should return 400 if SHORT amount exceeds available', async () => {
@@ -238,7 +237,6 @@ describe('Trade API Endpoints', () => {
         entryFee: 1,
         sumPlusFee: 5050,
         amount: 0.05,
-        remainingAmount: 0.05,
         initialEntryPrice: 100000,
         initialAmount: 0.05,
         openDate: new Date(),
@@ -409,7 +407,7 @@ describe('Trade API Endpoints', () => {
     it('should update parent LONG when SHORT is closed', async () => {
       (getServerSession as jest.Mock).mockResolvedValue(mockSession);
 
-      // Create parent LONG
+      // Create parent LONG (0.5 BTC already sold for SHORT)
       const parentLong = await Trade.create({
         portfolioId: testPortfolioId,
         coinSymbol: 'BTC',
@@ -418,9 +416,8 @@ describe('Trade API Endpoints', () => {
         entryPrice: 100000,
         depositPercent: 50,
         entryFee: 1,
-        sumPlusFee: 101000,
-        amount: 1.0,
-        remainingAmount: 0.5, // 0.5 sold for SHORT
+        sumPlusFee: 50500, // Proportional: (0.5/1.0) * 101000
+        amount: 0.5, // 0.5 BTC remaining after SHORT
         initialEntryPrice: 100000,
         initialAmount: 1.0,
         openDate: new Date(),
@@ -439,8 +436,6 @@ describe('Trade API Endpoints', () => {
         entryFee: 1,
         sumPlusFee: 55000, // 0.5 × 110,000
         amount: 0.5,
-        remainingAmount: 0.5,
-        originalAmount: 0.5,
         initialEntryPrice: 100000,
         initialAmount: 1.0,
         openDate: new Date(),
@@ -491,10 +486,11 @@ describe('Trade API Endpoints', () => {
       // Buy back at 100,000 with 1% fee: 100,000 × 1.01 = 101,000
       // Coins bought back: 54,450 / 101,000 = 0.5391 BTC
       // New amount: 0.5 + 0.5391 = 1.0391 BTC
-      // New entry price: 101,000 / 1.0391 = 97,199 USD
+      // New sumPlusFee: 50,500 (original remains same)
+      // New entry price: 50,500 / 1.0391 = 48,611 USD
 
-      expect(updatedParent?.remainingAmount).toBeCloseTo(1.0391, 4);
-      expect(updatedParent?.entryPrice).toBeCloseTo(97199, 0);
+      expect(updatedParent?.amount).toBeCloseTo(1.0391, 4);
+      expect(updatedParent?.entryPrice).toBeCloseTo(48611, 0);
 
       // CRITICAL: initialEntryPrice and initialAmount must NOT change
       expect(updatedParent?.initialEntryPrice).toBe(100000);

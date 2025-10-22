@@ -51,22 +51,6 @@ function calculateProfitPercent(trade: ITrade): number | null {
 function calculateProfitUSD(trade: ITrade): number | null {
   if (!trade.exitPrice) return null;
 
-  // For open/filled trades, use remaining amount
-  if (trade.status === TradeStatus.OPEN || trade.status === TradeStatus.FILLED) {
-    const remainingAmount = trade.remainingAmount ?? trade.amount;
-    const originalAmount = trade.originalAmount ?? trade.amount;
-
-    // Proportional entry cost for remaining amount
-    const proportion = remainingAmount / originalAmount;
-    const proportionalEntryCost = trade.sumPlusFee * proportion;
-
-    // Exit value for remaining amount
-    const exitValue = remainingAmount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
-
-    return exitValue - proportionalEntryCost;
-  }
-
-  // For closed trades, use actual amount (what was closed)
   const exitValue = trade.amount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
   return exitValue - trade.sumPlusFee;
 }
@@ -75,14 +59,12 @@ function calculateProfitUSD(trade: ITrade): number | null {
 function formatTradeForExport(trade: ITrade) {
   const profitPercent = calculateProfitPercent(trade);
   const profitUSD = calculateProfitUSD(trade);
-  const originalAmount = trade.originalAmount ?? trade.amount;
-  const remainingAmount = trade.remainingAmount ?? trade.amount;
 
   return {
     'Trade ID': trade._id,
     'Coin': trade.coinSymbol,
     'Status': trade.status,
-    'Type': trade.isPartialClose ? 'Partial' : 'Full',
+    'Trade Type': trade.tradeType,
     'Open Date': formatDate(trade.openDate),
     'Filled Date': formatDate(trade.filledDate),
     'Close Date': formatDate(trade.closeDate),
@@ -91,8 +73,7 @@ function formatTradeForExport(trade: ITrade) {
     'Deposit %': `${trade.depositPercent}%`,
     'Entry Fee %': `${trade.entryFee}%`,
     'Exit Fee %': trade.exitFee ? `${trade.exitFee}%` : '-',
-    'Original Amount': formatAmount(originalAmount),
-    'Remaining Amount': formatAmount(remainingAmount),
+    'Amount': formatAmount(trade.amount),
     'Sum+Fee': `$${trade.sumPlusFee.toFixed(2)}`,
     'Profit %': profitPercent !== null ? `${profitPercent >= 0 ? '+' : ''}${profitPercent.toFixed(2)}%` : '-',
     'Profit USD': profitUSD !== null ? `${profitUSD >= 0 ? '+$' : '-$'}${Math.abs(profitUSD).toFixed(2)}` : '-',

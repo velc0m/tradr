@@ -115,15 +115,12 @@ export async function PUT(
 
         if (parentTrade && parentTrade.tradeType === TradeType.LONG) {
           // Calculate profit in coins for SHORT
-          // IMPORTANT: sumPlusFee is now GROSS amount (before entry fee deduction)
-          const shortAmount = trade.remainingAmount ?? trade.amount;
-          const originalAmount = trade.originalAmount ?? trade.amount;
-          const proportion = shortAmount / originalAmount;
-          const proportionalGrossAmount = trade.sumPlusFee * proportion;
+          // No partial closes - always use full amount
+          const shortAmount = trade.amount;
 
           // Calculate net received after entry fee (sale fee)
           const entryFeeVal = trade.entryFee ?? 0;
-          const netReceived = proportionalGrossAmount * (100 - entryFeeVal) / 100;
+          const netReceived = trade.sumPlusFee * (100 - entryFeeVal) / 100;
 
           // Calculate buy back cost with exit fee
           const exitFeeVal = trade.exitFee ?? 0;
@@ -131,13 +128,12 @@ export async function PUT(
 
           // Calculate coins bought back from net received
           const coinsBoughtBack = netReceived / buyBackPriceWithFee;
-          const profitCoins = coinsBoughtBack - shortAmount;
 
           // Update parent LONG trade
-          const newAmount = (parentTrade.remainingAmount ?? parentTrade.amount) + coinsBoughtBack;
+          const newAmount = parentTrade.amount + coinsBoughtBack;
           const newEntryPrice = parentTrade.sumPlusFee / newAmount;
 
-          parentTrade.remainingAmount = newAmount;
+          parentTrade.amount = newAmount;
           parentTrade.entryPrice = newEntryPrice;
           // Do NOT update initialEntryPrice or initialAmount!
 
@@ -156,13 +152,6 @@ export async function PUT(
 
     if (validatedData.amount !== undefined) {
       trade.amount = validatedData.amount;
-
-      // Update originalAmount and remainingAmount for open/filled trades
-      // This is important because when we edit the amount, we're changing the entire position
-      if (trade.status === TradeStatus.OPEN || trade.status === TradeStatus.FILLED) {
-        trade.originalAmount = validatedData.amount;
-        trade.remainingAmount = validatedData.amount;
-      }
     }
 
     if (validatedData.sumPlusFee !== undefined) {

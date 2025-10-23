@@ -56,37 +56,43 @@ export function GroupedClosedTradeRow({group, showFees = false}: GroupedClosedTr
                     <span>{trade.coinSymbol}</span>
                 </TableCell>
                 <TableCell>
-                    <div className="flex items-center gap-1.5">
-                        {trade.tradeType === TradeType.SHORT ? (
-                            <>
-                <span className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            {trade.tradeType === TradeType.SHORT ? (
+                                <>
+                <span className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded whitespace-nowrap">
                   SHORT
                 </span>
-                                {trade.isAveragingShort && (
-                                    <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded"
-                                          title="Averaging operation - excluded from USD statistics">
+                                    {trade.isAveragingShort && (
+                                        <span
+                                            className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
+                                            title="Averaging operation - excluded from USD statistics">
                     AVERAGING
                   </span>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                <span className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">
+                                    )}
+                                </>
+                            ) : (
+                                <span
+                                    className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded whitespace-nowrap">
                   LONG
                 </span>
-                                {trade.initialEntryPrice && trade.entryPrice !== trade.initialEntryPrice && (
-                                    <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded"
-                                          title="Position was averaged down through SHORT averaging operation">
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            {trade.tradeType === TradeType.LONG && trade.initialAmount && trade.amount > trade.initialAmount && (
+                                <span
+                                    className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
+                                    title="Position was averaged down through SHORT averaging operation">
                     AVERAGED ↓
                   </span>
-                                )}
-                            </>
-                        )}
-                        {trade.splitGroupId && (
-                            <span className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">
+                            )}
+                            {trade.splitGroupId && (
+                                <span
+                                    className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded whitespace-nowrap">
                 Split
               </span>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </TableCell>
                 <TableCell>
@@ -183,37 +189,43 @@ export function GroupedClosedTradeRow({group, showFees = false}: GroupedClosedTr
                     </div>
                 </TableCell>
                 <TableCell>
-                    <div className="flex items-center gap-1.5">
-                        {group.mainTrade.tradeType === TradeType.SHORT ? (
-                            <>
-                <span className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            {group.mainTrade.tradeType === TradeType.SHORT ? (
+                                <>
+                <span className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded whitespace-nowrap">
                   SHORT
                 </span>
-                                {group.mainTrade.isAveragingShort && (
-                                    <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded"
-                                          title="Averaging operation - excluded from USD statistics">
+                                    {group.mainTrade.isAveragingShort && (
+                                        <span
+                                            className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
+                                            title="Averaging operation - excluded from USD statistics">
                     AVERAGING
                   </span>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                <span className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">
+                                    )}
+                                </>
+                            ) : (
+                                <span
+                                    className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded whitespace-nowrap">
                   LONG
                 </span>
-                                {group.mainTrade.initialEntryPrice && group.mainTrade.entryPrice !== group.mainTrade.initialEntryPrice && (
-                                    <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded"
-                                          title="Position was averaged down through SHORT averaging operation">
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            {group.mainTrade.tradeType === TradeType.LONG && group.mainTrade.initialAmount && group.mainTrade.amount > group.mainTrade.initialAmount && (
+                                <span
+                                    className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
+                                    title="Position was averaged down through SHORT averaging operation">
                     AVERAGED ↓
                   </span>
-                                )}
-                            </>
-                        )}
-                        {group.mainTrade.splitGroupId && (
-                            <span className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">
+                            )}
+                            {group.mainTrade.splitGroupId && (
+                                <span
+                                    className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded whitespace-nowrap">
                 Split
               </span>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </TableCell>
                 <TableCell>

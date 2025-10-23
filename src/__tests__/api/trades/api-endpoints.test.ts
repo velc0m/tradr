@@ -670,5 +670,63 @@ describe('Trade API Endpoints', () => {
             const stillExists = await Trade.findById(trade._id);
             expect(stillExists).not.toBeNull();
         });
+
+        it('should restore parent LONG amount when deleting not-closed SHORT', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(mockSession);
+
+            // Create parent LONG
+            const parentLong = await Trade.create({
+                portfolioId: testPortfolioId,
+                coinSymbol: 'BTC',
+                tradeType: TradeType.LONG,
+                status: TradeStatus.FILLED,
+                entryPrice: 100000,
+                depositPercent: 50,
+                entryFee: 1,
+                sumPlusFee: 5050,
+                amount: 0.03, // Already reduced by SHORT
+                initialEntryPrice: 100000,
+                initialAmount: 0.05,
+                openDate: new Date(),
+                filledDate: new Date(),
+            });
+
+            // Create FILLED SHORT
+            const shortTrade = await Trade.create({
+                portfolioId: testPortfolioId,
+                parentTradeId: parentLong._id.toString(),
+                coinSymbol: 'BTC',
+                tradeType: TradeType.SHORT,
+                status: TradeStatus.FILLED,
+                entryPrice: 110000,
+                depositPercent: 40,
+                entryFee: 1,
+                sumPlusFee: 2178,
+                amount: 0.02,
+                initialEntryPrice: 100000,
+                initialAmount: 0.05,
+                openDate: new Date(),
+                filledDate: new Date(),
+            });
+
+            const request = new NextRequest(
+                `http://localhost:3000/api/trades/${shortTrade._id}`,
+                {
+                    method: 'DELETE',
+                }
+            );
+
+            const response = await DELETE_TRADE(request, {
+                params: Promise.resolve({id: shortTrade._id.toString()}),
+            });
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(data.success).toBe(true);
+
+            // Verify parent LONG amount was restored
+            const updatedParent = await Trade.findById(parentLong._id);
+            expect(updatedParent?.amount).toBeCloseTo(0.05, 4); // 0.03 + 0.02
+        });
     });
 });

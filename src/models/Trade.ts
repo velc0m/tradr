@@ -1,150 +1,154 @@
-import mongoose, { Schema, Model } from 'mongoose';
-import { ITrade, TradeStatus, TradeType } from '@/types';
+import mongoose, {Model, Schema} from 'mongoose';
+import {ITrade, TradeStatus, TradeType} from '@/types';
 
 const TradeSchema = new Schema<ITrade>(
-  {
-    portfolioId: {
-      type: String,
-      required: [true, 'Portfolio ID is required'],
-      ref: 'Portfolio',
-      index: true,
+    {
+        portfolioId: {
+            type: String,
+            required: [true, 'Portfolio ID is required'],
+            ref: 'Portfolio',
+            index: true,
+        },
+        coinSymbol: {
+            type: String,
+            required: [true, 'Coin symbol is required'],
+            uppercase: true,
+            trim: true,
+        },
+        status: {
+            type: String,
+            enum: Object.values(TradeStatus),
+            default: TradeStatus.OPEN,
+            required: true,
+            index: true,
+        },
+        tradeType: {
+            type: String,
+            enum: Object.values(TradeType),
+            default: TradeType.LONG,
+            required: true,
+            index: true,
+        },
+        entryPrice: {
+            type: Number,
+            required: [true, 'Entry price is required'],
+            min: [0, 'Entry price cannot be negative'],
+        },
+        depositPercent: {
+            type: Number,
+            required: [true, 'Deposit percent is required'],
+            min: [0, 'Deposit percent cannot be negative'],
+            max: [100, 'Deposit percent cannot exceed 100'],
+        },
+        entryFee: {
+            type: Number,
+            required: [true, 'Entry fee is required'],
+            min: [0, 'Entry fee cannot be negative'],
+            default: 0.1,
+        },
+        sumPlusFee: {
+            type: Number,
+            required: [true, 'Sum plus fee is required'],
+            min: [0, 'Sum plus fee cannot be negative'],
+        },
+        exitPrice: {
+            type: Number,
+            min: [0, 'Exit price cannot be negative'],
+        },
+        exitFee: {
+            type: Number,
+            min: [0, 'Exit fee cannot be negative'],
+            default: 0.1,
+        },
+        amount: {
+            type: Number,
+            required: [true, 'Amount is required'],
+            min: [0, 'Amount cannot be negative'],
+        },
+        initialEntryPrice: {
+            type: Number,
+            required: [true, 'Initial entry price is required'],
+            min: [0, 'Initial entry price cannot be negative'],
+        },
+        initialAmount: {
+            type: Number,
+            required: [true, 'Initial amount is required'],
+            min: [0, 'Initial amount cannot be negative'],
+        },
+        parentTradeId: {
+            type: String,
+            ref: 'Trade',
+        },
+        isAveragingShort: {
+            type: Boolean,
+            default: false,
+        },
+        isSplit: {
+            type: Boolean,
+            default: false,
+        },
+        splitFromTradeId: {
+            type: String,
+            ref: 'Trade',
+        },
+        splitGroupId: {
+            type: String,
+        },
+        openDate: {
+            type: Date,
+            required: [true, 'Open date is required'],
+            default: Date.now,
+        },
+        filledDate: {
+            type: Date,
+        },
+        closeDate: {
+            type: Date,
+        },
     },
-    coinSymbol: {
-      type: String,
-      required: [true, 'Coin symbol is required'],
-      uppercase: true,
-      trim: true,
-    },
-    status: {
-      type: String,
-      enum: Object.values(TradeStatus),
-      default: TradeStatus.OPEN,
-      required: true,
-      index: true,
-    },
-    tradeType: {
-      type: String,
-      enum: Object.values(TradeType),
-      default: TradeType.LONG,
-      required: true,
-      index: true,
-    },
-    entryPrice: {
-      type: Number,
-      required: [true, 'Entry price is required'],
-      min: [0, 'Entry price cannot be negative'],
-    },
-    depositPercent: {
-      type: Number,
-      required: [true, 'Deposit percent is required'],
-      min: [0, 'Deposit percent cannot be negative'],
-      max: [100, 'Deposit percent cannot exceed 100'],
-    },
-    entryFee: {
-      type: Number,
-      required: [true, 'Entry fee is required'],
-      min: [0, 'Entry fee cannot be negative'],
-      default: 0.1,
-    },
-    sumPlusFee: {
-      type: Number,
-      required: [true, 'Sum plus fee is required'],
-      min: [0, 'Sum plus fee cannot be negative'],
-    },
-    exitPrice: {
-      type: Number,
-      min: [0, 'Exit price cannot be negative'],
-    },
-    exitFee: {
-      type: Number,
-      min: [0, 'Exit fee cannot be negative'],
-      default: 0.1,
-    },
-    amount: {
-      type: Number,
-      required: [true, 'Amount is required'],
-      min: [0, 'Amount cannot be negative'],
-    },
-    initialEntryPrice: {
-      type: Number,
-      required: [true, 'Initial entry price is required'],
-      min: [0, 'Initial entry price cannot be negative'],
-    },
-    initialAmount: {
-      type: Number,
-      required: [true, 'Initial amount is required'],
-      min: [0, 'Initial amount cannot be negative'],
-    },
-    parentTradeId: {
-      type: String,
-      ref: 'Trade',
-    },
-    isSplit: {
-      type: Boolean,
-      default: false,
-    },
-    splitFromTradeId: {
-      type: String,
-      ref: 'Trade',
-    },
-    splitGroupId: {
-      type: String,
-    },
-    openDate: {
-      type: Date,
-      required: [true, 'Open date is required'],
-      default: Date.now,
-    },
-    filledDate: {
-      type: Date,
-    },
-    closeDate: {
-      type: Date,
-    },
-  },
-  {
-    timestamps: true,
-  }
+    {
+        timestamps: true,
+    }
 );
 
 // Indexes for better query performance
-TradeSchema.index({ portfolioId: 1, status: 1 });
-TradeSchema.index({ portfolioId: 1, openDate: -1 });
-TradeSchema.index({ portfolioId: 1, coinSymbol: 1 });
+TradeSchema.index({portfolioId: 1, status: 1});
+TradeSchema.index({portfolioId: 1, openDate: -1});
+TradeSchema.index({portfolioId: 1, coinSymbol: 1});
 
 // Virtual for calculating profit/loss
 TradeSchema.virtual('profitLoss').get(function () {
-  if (!this.exitPrice || this.status !== TradeStatus.CLOSED) {
-    return null;
-  }
+    if (!this.exitPrice || this.status !== TradeStatus.CLOSED) {
+        return null;
+    }
 
-  const entryValue = this.amount * this.entryPrice;
-  const exitValue = this.amount * this.exitPrice;
-  const totalFees = this.entryFee + (this.exitFee || 0);
+    const entryValue = this.amount * this.entryPrice;
+    const exitValue = this.amount * this.exitPrice;
+    const totalFees = this.entryFee + (this.exitFee || 0);
 
-  return exitValue - entryValue - totalFees;
+    return exitValue - entryValue - totalFees;
 });
 
 // Virtual for calculating profit/loss percentage
 TradeSchema.virtual('profitLossPercent').get(function () {
-  if (!this.exitPrice || this.status !== TradeStatus.CLOSED) {
-    return null;
-  }
+    if (!this.exitPrice || this.status !== TradeStatus.CLOSED) {
+        return null;
+    }
 
-  const entryValue = this.amount * this.entryPrice;
-  const exitValue = this.amount * this.exitPrice;
-  const totalFees = this.entryFee + (this.exitFee || 0);
-  const profitLoss = exitValue - entryValue - totalFees;
+    const entryValue = this.amount * this.entryPrice;
+    const exitValue = this.amount * this.exitPrice;
+    const totalFees = this.entryFee + (this.exitFee || 0);
+    const profitLoss = exitValue - entryValue - totalFees;
 
-  return (profitLoss / entryValue) * 100;
+    return (profitLoss / entryValue) * 100;
 });
 
 // Ensure virtuals are included in JSON
-TradeSchema.set('toJSON', { virtuals: true });
-TradeSchema.set('toObject', { virtuals: true });
+TradeSchema.set('toJSON', {virtuals: true});
+TradeSchema.set('toObject', {virtuals: true});
 
 // Prevent model recompilation in development
 const Trade: Model<ITrade> =
-  mongoose.models.Trade || mongoose.model<ITrade>('Trade', TradeSchema);
+    mongoose.models.Trade || mongoose.model<ITrade>('Trade', TradeSchema);
 
 export default Trade;

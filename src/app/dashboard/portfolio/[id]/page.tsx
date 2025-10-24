@@ -56,6 +56,13 @@ import {
 } from 'lucide-react';
 import {useBlur} from '@/contexts/BlurContext';
 import {BlurredAmount} from '@/components/ui/BlurredAmount';
+import {
+    calculateProfitPercent,
+    calculateProfitUSD,
+    calculateProfitCoins,
+    formatPrice,
+    formatAmount
+} from '@/lib/trade-calculations';
 
 interface PortfolioPageProps {
     params: {
@@ -305,65 +312,6 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
             setIsDeleting(false);
             setDeleteDialogOpen(false);
         }
-    };
-
-    const calculateProfitPercent = (trade: ITrade): number | null => {
-        if (!trade.exitPrice) return null;
-
-        if (trade.tradeType === TradeType.SHORT) {
-            // SHORT: profit % based on coins gained
-            const entryFeeVal = trade.entryFee || 0;
-            const netReceived = trade.sumPlusFee * (100 - entryFeeVal) / 100;
-            const exitFeeVal = trade.exitFee || 0;
-            const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
-            const coinsBoughtBack = netReceived / buyBackPriceWithFee;
-            return ((coinsBoughtBack / trade.amount - 1) * 100);
-        }
-
-        // LONG: profit % based on price change minus fees
-        return (
-            ((trade.exitPrice / trade.entryPrice - 1) * 100) -
-            trade.entryFee -
-            (trade.exitFee || 0)
-        );
-    };
-
-    // Calculate Profit USD (LONG only)
-    const calculateProfitUSD = (trade: ITrade): number | null => {
-        if (!trade.exitPrice || trade.tradeType === TradeType.LONG) {
-            if (!trade.exitPrice) return null;
-            const exitValue = trade.amount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
-            return exitValue - trade.sumPlusFee;
-        }
-        return null;
-    };
-
-    // Calculate Profit Coins (SHORT only)
-    const calculateProfitCoins = (trade: ITrade): number | null => {
-        if (!trade.exitPrice || trade.tradeType !== TradeType.SHORT) return null;
-
-        const entryFeeVal = trade.entryFee || 0;
-        const netReceived = trade.sumPlusFee * (100 - entryFeeVal) / 100;
-        const exitFeeVal = trade.exitFee || 0;
-        const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
-        const coinsBoughtBack = netReceived / buyBackPriceWithFee;
-
-        return coinsBoughtBack - trade.amount;
-    };
-
-    const formatPrice = (price: number): string => {
-        // Format USD prices with 2 decimal places
-        const formatted = price.toFixed(2);
-        const trimmed = formatted.replace(/\.?0+$/, '');
-        return trimmed;
-    };
-
-    const formatAmount = (amount: number): string => {
-        // Show crypto amounts with max 8 decimal places (Bitcoin standard)
-        // Remove trailing zeros
-        const formatted = amount.toFixed(8);
-        const trimmed = formatted.replace(/\.?0+$/, '');
-        return trimmed;
     };
 
     // Check if LONG trade has active SHORT positions

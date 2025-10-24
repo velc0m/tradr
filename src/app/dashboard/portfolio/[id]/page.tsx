@@ -25,6 +25,7 @@ import {CoinAllocationCard} from '@/components/features/portfolios/CoinAllocatio
 import {QuickStatsCard} from '@/components/features/portfolios/QuickStatsCard';
 import {CreateTradeModal} from '@/components/features/trades/CreateTradeModal';
 import {OpenTradesTable} from '@/components/features/trades/OpenTradesTable';
+import {ClosedTradesFilters} from '@/components/features/trades/ClosedTradesFilters';
 import {EditTradeDialog} from '@/components/features/trades/EditTradeDialog';
 import {EditExitPriceModal} from '@/components/features/trades/EditExitPriceModal';
 import {MarkAsFilledDialog} from '@/components/features/trades/MarkAsFilledDialog';
@@ -664,114 +665,13 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                                     No closed trades yet.
                                 </div>
                             ) : (
-                                <>
-                                    {/* Filters and Sorting */}
-                                    <div className="flex flex-wrap gap-3 mb-4 items-center">
-                                        <div className="flex items-center gap-2">
-                                            <Filter className="h-4 w-4 text-muted-foreground"/>
-                                            <span className="text-sm text-muted-foreground">Filters:</span>
-                                        </div>
-
-                                        {/* Coin Filter */}
-                                        <Select
-                                            value={closedTradesFilter.coin}
-                                            onValueChange={(value) =>
-                                                setClosedTradesFilter({...closedTradesFilter, coin: value})
-                                            }
-                                        >
-                                            <SelectTrigger className="w-[120px]">
-                                                <SelectValue placeholder="Coin"/>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Coins</SelectItem>
-                                                {uniqueCoins.map((coin) => (
-                                                    <SelectItem key={coin} value={coin}>
-                                                        {coin}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-
-                                        {/* Type Filter */}
-                                        <Select
-                                            value={closedTradesFilter.type}
-                                            onValueChange={(value) =>
-                                                setClosedTradesFilter({...closedTradesFilter, type: value})
-                                            }
-                                        >
-                                            <SelectTrigger className="w-[120px]">
-                                                <SelectValue placeholder="Type"/>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Types</SelectItem>
-                                                <SelectItem value={TradeType.LONG}>LONG</SelectItem>
-                                                <SelectItem value={TradeType.SHORT}>SHORT</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-
-                                        {/* Sort By */}
-                                        <Select
-                                            value={closedTradesFilter.sortBy}
-                                            onValueChange={(value: 'closeDate' | 'filledDate' | 'none') =>
-                                                setClosedTradesFilter({...closedTradesFilter, sortBy: value})
-                                            }
-                                        >
-                                            <SelectTrigger className="w-[150px]">
-                                                <SelectValue placeholder="Sort by"/>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="none">No Sort</SelectItem>
-                                                <SelectItem value="closeDate">Close Date</SelectItem>
-                                                <SelectItem value="filledDate">Filled Date</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-
-                                        {/* Sort Order */}
-                                        {closedTradesFilter.sortBy !== 'none' && (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setClosedTradesFilter({
-                                                        ...closedTradesFilter,
-                                                        sortOrder: closedTradesFilter.sortOrder === 'asc' ? 'desc' : 'asc',
-                                                    })
-                                                }
-                                            >
-                                                {closedTradesFilter.sortOrder === 'asc' ? (
-                                                    <ArrowUp className="h-4 w-4"/>
-                                                ) : (
-                                                    <ArrowDown className="h-4 w-4"/>
-                                                )}
-                                            </Button>
-                                        )}
-
-                                        {/* Clear Filters */}
-                                        {(closedTradesFilter.coin !== 'all' ||
-                                            closedTradesFilter.type !== 'all' ||
-                                            closedTradesFilter.sortBy !== 'closeDate') && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setClosedTradesFilter({
-                                                        coin: 'all',
-                                                        type: 'all',
-                                                        sortBy: 'closeDate',
-                                                        sortOrder: 'desc',
-                                                    })
-                                                }
-                                            >
-                                                <X className="h-4 w-4 mr-1"/>
-                                                Clear
-                                            </Button>
-                                        )}
-
-                                        <div className="ml-auto text-sm text-muted-foreground">
-                                            Showing {groupedClosedTrades.length} of {closedTrades.length} trades
-                                        </div>
-                                    </div>
-                                </>
+                                <ClosedTradesFilters
+                                    filter={closedTradesFilter}
+                                    onFilterChange={setClosedTradesFilter}
+                                    uniqueCoins={uniqueCoins}
+                                    filteredCount={groupedClosedTrades.length}
+                                    totalCount={closedTrades.length}
+                                />
                             )}
 
                             {groupedClosedTrades.length > 0 && (

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from '@/components/ui/table';
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -29,7 +30,9 @@ import {GroupedClosedTradeRow, TradeGroup} from '@/components/features/trades/Gr
 import {useToast} from '@/components/ui/use-toast';
 import {IPortfolio, ITrade, TradeStatus, TradeType} from '@/types';
 import {
+    ArrowDown,
     ArrowLeft,
+    ArrowUp,
     BarChart3,
     Check,
     CornerDownRight,
@@ -38,11 +41,13 @@ import {
     Edit,
     Eye,
     EyeOff,
+    Filter,
     MinusCircle,
     Pencil,
     Plus,
     Trash2,
-    TrendingDown
+    TrendingDown,
+    X
 } from 'lucide-react';
 import {useBlur} from '@/contexts/BlurContext';
 import {BlurredAmount} from '@/components/ui/BlurredAmount';
@@ -89,6 +94,17 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
     const [tradeToDelete, setTradeToDelete] = useState<ITrade | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
     const [showFees, setShowFees] = useState(false);
+    const [closedTradesFilter, setClosedTradesFilter] = useState<{
+        coin: string;
+        type: string;
+        sortBy: 'closeDate' | 'filledDate' | 'none';
+        sortOrder: 'asc' | 'desc';
+    }>({
+        coin: 'all',
+        type: 'all',
+        sortBy: 'closeDate',
+        sortOrder: 'desc',
+    });
     const {toast} = useToast();
 
     useEffect(() => {
@@ -383,6 +399,12 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
     );
     const closedTrades = trades.filter((t) => t.status === TradeStatus.CLOSED && !t.isSplit);
 
+    // Get unique coins from closed trades for filter
+    const uniqueCoins = useMemo(() => {
+        const coins = new Set(closedTrades.map(t => t.coinSymbol));
+        return Array.from(coins).sort();
+    }, [closedTrades]);
+
     // Group open trades: LONG with their SHORT children, and split positions
     const groupedOpenTrades = useMemo(() => {
         const grouped: Array<{
@@ -471,10 +493,34 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
 
     // Group closed trades - simple grouping, no partial close logic
     const groupedClosedTrades = useMemo(() => {
+        let filtered = [...closedTrades];
+
+        // Apply filters
+        if (closedTradesFilter.coin !== 'all') {
+            filtered = filtered.filter(t => t.coinSymbol === closedTradesFilter.coin);
+        }
+        if (closedTradesFilter.type !== 'all') {
+            filtered = filtered.filter(t => t.tradeType === closedTradesFilter.type);
+        }
+
+        // Apply sorting
+        if (closedTradesFilter.sortBy !== 'none') {
+            filtered.sort((a, b) => {
+                const dateA = closedTradesFilter.sortBy === 'closeDate'
+                    ? (a.closeDate ? new Date(a.closeDate).getTime() : 0)
+                    : (a.filledDate ? new Date(a.filledDate).getTime() : 0);
+                const dateB = closedTradesFilter.sortBy === 'closeDate'
+                    ? (b.closeDate ? new Date(b.closeDate).getTime() : 0)
+                    : (b.filledDate ? new Date(b.filledDate).getTime() : 0);
+
+                return closedTradesFilter.sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+            });
+        }
+
         const groups: TradeGroup[] = [];
 
         // Each closed trade is shown as a separate "full" trade
-        closedTrades.forEach((trade) => {
+        filtered.forEach((trade) => {
             groups.push({
                 type: 'full',
                 mainTrade: trade,
@@ -483,7 +529,7 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
         });
 
         return groups;
-    }, [closedTrades]);
+    }, [closedTrades, closedTradesFilter]);
 
     if (isLoading) {
         return (
@@ -787,7 +833,8 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                                                             </TableCell>
                                                             <TableCell>
                                                                 <div className="flex flex-col gap-1">
-                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                    <div
+                                                                        className="flex items-center gap-1.5 flex-wrap">
                                                                         {trade.tradeType === TradeType.SHORT ? (
                                                                             <span
                                                                                 className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded whitespace-nowrap">
@@ -1018,7 +1065,7 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                         <CardHeader>
                             <div className="flex justify-between items-center">
                                 <CardTitle>Closed Trades</CardTitle>
-                                {groupedClosedTrades.length > 0 && (
+                                {closedTrades.length > 0 && (
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -1031,11 +1078,122 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                             </div>
                         </CardHeader>
                         <CardContent>
-                            {groupedClosedTrades.length === 0 ? (
+                            {closedTrades.length === 0 ? (
                                 <div className="text-center py-12 text-muted-foreground">
                                     No closed trades yet.
                                 </div>
                             ) : (
+                                <>
+                                    {/* Filters and Sorting */}
+                                    <div className="flex flex-wrap gap-3 mb-4 items-center">
+                                        <div className="flex items-center gap-2">
+                                            <Filter className="h-4 w-4 text-muted-foreground"/>
+                                            <span className="text-sm text-muted-foreground">Filters:</span>
+                                        </div>
+
+                                        {/* Coin Filter */}
+                                        <Select
+                                            value={closedTradesFilter.coin}
+                                            onValueChange={(value) =>
+                                                setClosedTradesFilter({...closedTradesFilter, coin: value})
+                                            }
+                                        >
+                                            <SelectTrigger className="w-[120px]">
+                                                <SelectValue placeholder="Coin"/>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Coins</SelectItem>
+                                                {uniqueCoins.map((coin) => (
+                                                    <SelectItem key={coin} value={coin}>
+                                                        {coin}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+
+                                        {/* Type Filter */}
+                                        <Select
+                                            value={closedTradesFilter.type}
+                                            onValueChange={(value) =>
+                                                setClosedTradesFilter({...closedTradesFilter, type: value})
+                                            }
+                                        >
+                                            <SelectTrigger className="w-[120px]">
+                                                <SelectValue placeholder="Type"/>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Types</SelectItem>
+                                                <SelectItem value={TradeType.LONG}>LONG</SelectItem>
+                                                <SelectItem value={TradeType.SHORT}>SHORT</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+
+                                        {/* Sort By */}
+                                        <Select
+                                            value={closedTradesFilter.sortBy}
+                                            onValueChange={(value: 'closeDate' | 'filledDate' | 'none') =>
+                                                setClosedTradesFilter({...closedTradesFilter, sortBy: value})
+                                            }
+                                        >
+                                            <SelectTrigger className="w-[150px]">
+                                                <SelectValue placeholder="Sort by"/>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">No Sort</SelectItem>
+                                                <SelectItem value="closeDate">Close Date</SelectItem>
+                                                <SelectItem value="filledDate">Filled Date</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+
+                                        {/* Sort Order */}
+                                        {closedTradesFilter.sortBy !== 'none' && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() =>
+                                                    setClosedTradesFilter({
+                                                        ...closedTradesFilter,
+                                                        sortOrder: closedTradesFilter.sortOrder === 'asc' ? 'desc' : 'asc',
+                                                    })
+                                                }
+                                            >
+                                                {closedTradesFilter.sortOrder === 'asc' ? (
+                                                    <ArrowUp className="h-4 w-4"/>
+                                                ) : (
+                                                    <ArrowDown className="h-4 w-4"/>
+                                                )}
+                                            </Button>
+                                        )}
+
+                                        {/* Clear Filters */}
+                                        {(closedTradesFilter.coin !== 'all' ||
+                                            closedTradesFilter.type !== 'all' ||
+                                            closedTradesFilter.sortBy !== 'closeDate') && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() =>
+                                                    setClosedTradesFilter({
+                                                        coin: 'all',
+                                                        type: 'all',
+                                                        sortBy: 'closeDate',
+                                                        sortOrder: 'desc',
+                                                    })
+                                                }
+                                            >
+                                                <X className="h-4 w-4 mr-1"/>
+                                                Clear
+                                            </Button>
+                                        )}
+
+                                        <div className="ml-auto text-sm text-muted-foreground">
+                                            Showing {groupedClosedTrades.length} of {closedTrades.length} trades
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {groupedClosedTrades.length > 0 && (
                                 <div className="overflow-x-auto">
                                     <Table>
                                         <TableHeader>

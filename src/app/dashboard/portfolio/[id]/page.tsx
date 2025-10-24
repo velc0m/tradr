@@ -748,6 +748,7 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="min-w-[60px]">Coin</TableHead>
+                                                <TableHead className="min-w-[150px]">Type</TableHead>
                                                 <TableHead className="min-w-[70px]">Status</TableHead>
                                                 <TableHead className="min-w-[100px]">Date</TableHead>
                                                 <TableHead className="min-w-[90px]">Entry Price</TableHead>
@@ -781,65 +782,56 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                                                                         <CornerDownRight
                                                                             className="h-4 w-4 text-muted-foreground"/>
                                                                     )}
-                                                                    <div>
-                                                                        <div className="flex flex-col gap-1">
-                                                                            <div
-                                                                                className="flex items-center gap-1.5 flex-wrap">
-                                                                                <span>{trade.coinSymbol}</span>
-                                                                                {trade.tradeType === TradeType.SHORT ? (
-                                                                                    <>
-                                          <span
-                                              className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                            SHORT
-                                          </span>
-                                                                                        {trade.isAveragingShort && (
-                                                                                            <span
-                                                                                                className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
-                                                                                                title="Averaging operation - excluded from USD statistics">
-                                              AVERAGING
-                                            </span>
-                                                                                        )}
-                                                                                    </>
-                                                                                ) : (
-                                                                                    <>
-                                          <span
-                                              className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                            LONG
-                                          </span>
-                                                                                        {isLongWithActiveShorts && (
-                                                                                            <span
-                                                                                                className="text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded whitespace-nowrap"
-                                                                                                title="Has active SHORT positions">
-                                          🔒 Locked
-                                        </span>
-                                                                                        )}
-                                                                                    </>
-                                                                                )}
-                                                                            </div>
-                                                                            <div
-                                                                                className="flex items-center gap-1.5 flex-wrap">
-                                                                                {trade.tradeType === TradeType.LONG && trade.initialAmount && trade.amount > trade.initialAmount && (
-                                                                                    <span
-                                                                                        className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
-                                                                                        title="Position was averaged down through SHORT averaging operation">
-                                          AVERAGED ↓
-                                        </span>
-                                                                                )}
-                                                                                {splitInfo && (
-                                                                                    <span
-                                                                                        className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                          Split {splitInfo.part}/{splitInfo.total}
-                                        </span>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                        {isChild && (
-                                                                            <div
-                                                                                className="text-xs text-muted-foreground mt-0.5">
-                                                                                ↳ SHORT for parent LONG
-                                                                            </div>
+                                                                    <span>{trade.coinSymbol}</span>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <div className="flex flex-col gap-1">
+                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                        {trade.tradeType === TradeType.SHORT ? (
+                                                                            <span
+                                                                                className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                                                SHORT
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span
+                                                                                className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                                                LONG
+                                                                            </span>
+                                                                        )}
+                                                                        {trade.isAveragingShort && (
+                                                                            <span
+                                                                                className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
+                                                                                title="Averaging operation - excluded from USD statistics">
+                                                                                AVERAGING
+                                                                            </span>
+                                                                        )}
+                                                                        {trade.tradeType === TradeType.LONG && trade.initialAmount && trade.amount > trade.initialAmount && (
+                                                                            <span
+                                                                                className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
+                                                                                title="Position was averaged down through SHORT averaging operation">
+                                                                                AVERAGED ↓
+                                                                            </span>
+                                                                        )}
+                                                                        {isLongWithActiveShorts && (
+                                                                            <span
+                                                                                className="text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded whitespace-nowrap"
+                                                                                title="Has active SHORT positions">
+                                                                                🔒 Locked
+                                                                            </span>
+                                                                        )}
+                                                                        {splitInfo && (
+                                                                            <span
+                                                                                className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                                                Split {splitInfo.part}/{splitInfo.total}
+                                                                            </span>
                                                                         )}
                                                                     </div>
+                                                                    {isChild && (
+                                                                        <div className="text-xs text-muted-foreground">
+                                                                            ↳ SHORT for parent LONG
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </TableCell>
                                                             <TableCell>

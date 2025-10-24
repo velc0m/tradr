@@ -19,6 +19,14 @@ const portfolioCoinSchema = z.object({
     .max(8, 'Decimal places cannot exceed 8'),
 });
 
+const initialCoinSchema = z.object({
+  symbol: z.string().min(1, 'Coin symbol is required').toUpperCase(),
+  amount: z
+    .number()
+    .min(0, 'Amount cannot be negative')
+    .positive('Amount must be greater than 0'),
+});
+
 const createPortfolioSchema = z.object({
   name: z
     .string()
@@ -44,6 +52,7 @@ const createPortfolioSchema = z.object({
         message: 'Total coin percentages must equal 100%',
       }
     ),
+  initialCoins: z.array(initialCoinSchema).optional(),
 });
 
 /**
@@ -104,18 +113,29 @@ export async function POST(
 
     const body: CreatePortfolioInput = await request.json();
 
+    console.log('Received portfolio creation request:', JSON.stringify(body, null, 2));
+
     // Validate input
     const validatedData = createPortfolioSchema.parse(body);
+
+    console.log('Validated data:', JSON.stringify(validatedData, null, 2));
 
     await connectDB();
 
     // Create new portfolio
-    const portfolio = await Portfolio.create({
+    const portfolioData = {
       userId: session.user.id,
       name: validatedData.name,
       totalDeposit: validatedData.totalDeposit,
       coins: validatedData.coins,
-    });
+      initialCoins: validatedData.initialCoins ?? [],
+    };
+
+    console.log('Creating portfolio with data:', JSON.stringify(portfolioData, null, 2));
+
+    const portfolio = await Portfolio.create(portfolioData);
+
+    console.log('Created portfolio:', JSON.stringify(portfolio.toObject(), null, 2));
 
     return NextResponse.json(
       {

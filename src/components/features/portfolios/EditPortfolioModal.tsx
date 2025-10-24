@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { CreateCryptoModal } from '@/components/features/cryptocurrencies/CreateCryptoModal';
-import { ICryptocurrency, IPortfolioCoin, IPortfolio } from '@/types';
+import { ICryptocurrency, IPortfolioCoin, IPortfolio, IInitialCoin } from '@/types';
 import { Plus, X } from 'lucide-react';
 
 interface EditPortfolioModalProps {
@@ -45,13 +45,20 @@ export function EditPortfolioModal({
     portfolio.totalDeposit.toString()
   );
   const [coins, setCoins] = useState<IPortfolioCoin[]>(portfolio.coins);
+  const [initialCoins, setInitialCoins] = useState<IInitialCoin[]>(
+    portfolio.initialCoins || []
+  );
   const { toast } = useToast();
 
   // Reset form when portfolio changes
   useEffect(() => {
+    console.log('EditPortfolioModal - Portfolio data:', JSON.stringify(portfolio, null, 2));
+    console.log('EditPortfolioModal - Initial coins from portfolio:', portfolio.initialCoins);
+
     setName(portfolio.name);
     setTotalDeposit(portfolio.totalDeposit.toString());
     setCoins(portfolio.coins);
+    setInitialCoins(portfolio.initialCoins || []);
   }, [portfolio]);
 
   // Fetch cryptocurrencies when modal opens
@@ -121,6 +128,29 @@ export function EditPortfolioModal({
     }
   };
 
+  const addInitialCoin = () => {
+    setInitialCoins((prevCoins) => [
+      ...prevCoins,
+      { symbol: '', amount: 0 },
+    ]);
+  };
+
+  const removeInitialCoin = (index: number) => {
+    setInitialCoins((prevCoins) => prevCoins.filter((_, i) => i !== index));
+  };
+
+  const updateInitialCoin = (
+    index: number,
+    field: keyof IInitialCoin,
+    value: string | number
+  ) => {
+    setInitialCoins((prevCoins) => {
+      const newCoins = [...prevCoins];
+      newCoins[index] = { ...newCoins[index], [field]: value };
+      return newCoins;
+    });
+  };
+
   const getTotalPercentage = () => {
     return coins.reduce((sum, coin) => sum + coin.percentage, 0);
   };
@@ -129,12 +159,16 @@ export function EditPortfolioModal({
     const totalPercentage = getTotalPercentage();
     const hasEmptySymbols = coins.some((coin) => !coin.symbol);
     const hasValidDeposit = parseFloat(totalDeposit) > 0;
+    const hasInvalidInitialCoins = initialCoins.some(
+      (coin) => !coin.symbol || coin.amount <= 0
+    );
 
     return (
       name.trim() !== '' &&
       hasValidDeposit &&
       !hasEmptySymbols &&
-      Math.abs(totalPercentage - 100) < 0.01
+      Math.abs(totalPercentage - 100) < 0.01 &&
+      !hasInvalidInitialCoins
     );
   };
 
@@ -153,16 +187,22 @@ export function EditPortfolioModal({
     setIsLoading(true);
 
     try {
+      const payload = {
+        name: name.trim(),
+        totalDeposit: parseFloat(totalDeposit),
+        coins,
+        initialCoins: initialCoins.length > 0 ? initialCoins : undefined,
+      };
+
+      console.log('Updating portfolio with payload:', JSON.stringify(payload, null, 2));
+      console.log('Current initialCoins state:', initialCoins);
+
       const response = await fetch(`/api/portfolios/${portfolio._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name: name.trim(),
-          totalDeposit: parseFloat(totalDeposit),
-          coins,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -244,6 +284,90 @@ export function EditPortfolioModal({
                   required
                   disabled={isLoading}
                 />
+              </div>
+
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm text-muted-foreground">
+                    Initial Coins (Optional)
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Add coins you already own that are not purchased with the deposit
+                </p>
+
+                {initialCoins.length > 0 && (
+                  <div className="grid gap-3">
+                    {initialCoins.map((coin, index) => (
+                      <div
+                        key={index}
+                        className="grid grid-cols-[1fr_140px_auto] gap-2 items-end"
+                      >
+                        <div className="grid gap-1">
+                          <Label className="text-xs">Cryptocurrency</Label>
+                          <Select
+                            value={coin.symbol}
+                            onValueChange={(value) =>
+                              updateInitialCoin(index, 'symbol', value.toUpperCase())
+                            }
+                            disabled={isLoading}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select coin" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {cryptocurrencies.map((crypto) => (
+                                <SelectItem key={crypto._id} value={crypto.symbol}>
+                                  {crypto.symbol} - {crypto.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="grid gap-1">
+                          <Label className="text-xs">Amount</Label>
+                          <Input
+                            type="number"
+                            placeholder="1.5"
+                            value={coin.amount || ''}
+                            onChange={(e) =>
+                              updateInitialCoin(
+                                index,
+                                'amount',
+                                parseFloat(e.target.value) || 0
+                              )
+                            }
+                            min={0}
+                            step="0.00000001"
+                            disabled={isLoading}
+                          />
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeInitialCoin(index)}
+                          disabled={isLoading}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addInitialCoin}
+                  disabled={isLoading}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Initial Coin
+                </Button>
               </div>
 
               <div className="grid gap-2">

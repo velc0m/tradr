@@ -1,5 +1,5 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { IPortfolio, IPortfolioCoin } from '@/types';
+import { IPortfolio, IPortfolioCoin, IInitialCoin } from '@/types';
 
 const PortfolioCoinSchema = new Schema<IPortfolioCoin>(
   {
@@ -21,6 +21,23 @@ const PortfolioCoinSchema = new Schema<IPortfolioCoin>(
       min: [0, 'Decimal places cannot be negative'],
       max: [8, 'Decimal places cannot exceed 8'],
       default: 2,
+    },
+  },
+  { _id: false }
+);
+
+const InitialCoinSchema = new Schema<IInitialCoin>(
+  {
+    symbol: {
+      type: String,
+      required: [true, 'Coin symbol is required'],
+      uppercase: true,
+      trim: true,
+    },
+    amount: {
+      type: Number,
+      required: [true, 'Amount is required'],
+      min: [0, 'Amount cannot be negative'],
     },
   },
   { _id: false }
@@ -58,6 +75,10 @@ const PortfolioSchema = new Schema<IPortfolio>(
         message: 'Total coin percentages must equal 100%',
       },
     },
+    initialCoins: {
+      type: [InitialCoinSchema],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -71,5 +92,10 @@ PortfolioSchema.index({ userId: 1, createdAt: -1 });
 const Portfolio: Model<IPortfolio> =
   mongoose.models.Portfolio ||
   mongoose.model<IPortfolio>('Portfolio', PortfolioSchema);
+
+// Debug: log schema paths to verify initialCoins is included
+if (process.env.NODE_ENV === 'development') {
+  console.log('Portfolio model schema paths:', Object.keys(Portfolio.schema.paths));
+}
 
 export default Portfolio;

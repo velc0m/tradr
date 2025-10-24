@@ -63,7 +63,7 @@ DOGE    10%         4
 | Trade ID | MongoDB ObjectId | String |
 | Coin | Cryptocurrency symbol | BTC, ETH, etc. |
 | Status | Trade status | OPEN, FILLED, CLOSED |
-| Type | Full or partial close | Full, Partial |
+| Type | Trade type | LONG, SHORT |
 | Open Date | Order placement date | YYYY-MM-DD HH:mm |
 | Filled Date | Order filled date | YYYY-MM-DD HH:mm or `-` |
 | Close Date | Position closed date | YYYY-MM-DD HH:mm or `-` |
@@ -72,29 +72,21 @@ DOGE    10%         4
 | Deposit % | % of deposit used | 10% |
 | Entry Fee % | Entry fee percentage | 0.25% |
 | Exit Fee % | Exit fee percentage | 0.25% or `-` |
-| Original Amount | Total amount purchased | 1.50000000 |
-| Remaining Amount | Amount still in position | 0.80000000 |
+| Amount | Coin amount | 1.50000000 |
 | Sum+Fee | Total entry cost | $67,500.00 |
 | Profit % | Net profit percentage | +7.50% or -2.30% |
 | Profit USD | Net profit in USD | +$5,000.00 or -$1,500.00 |
+| Split Group | UUID for split positions | Shared by all splits or `-` |
 
 ## Profit Calculations in Export
 
-### For OPEN/FILLED Trades
-Uses `remainingAmount` for profit calculation:
-```typescript
-proportion = remainingAmount / originalAmount
-proportionalEntryCost = sumPlusFee × proportion
-exitValue = remainingAmount × exitPrice × (100 - exitFee) / 100
-profitUSD = exitValue - proportionalEntryCost
-```
-
-### For CLOSED Trades
-Uses actual closed `amount`:
+All trades use the same profit calculation:
 ```typescript
 exitValue = amount × exitPrice × (100 - exitFee) / 100
 profitUSD = exitValue - sumPlusFee
 ```
+
+Note: Split positions each have their own `amount` and `sumPlusFee` values.
 
 ## File Naming
 
@@ -157,10 +149,10 @@ Content-Disposition: attachment; filename="portfolio-name-date.csv"
 - Exit Price shows `-`
 - Exit Fee shows `-`
 
-### Partial Close Trades
-- `Type` column shows "Partial"
-- `Original Amount` shows original position size
-- `Remaining Amount` shows current remaining (0 for closed portions)
+### Split Positions
+- All splits from same original share a `splitGroupId` (UUID)
+- Each split trade exports as independent row
+- Original split trade (marked `isSplit: true`) exports as CLOSED
 
 ### Special Characters in Portfolio Name
 - Sanitized in filename

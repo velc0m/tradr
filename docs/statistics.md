@@ -18,13 +18,9 @@ Net profit percentage after all fees.
 For closed trades:
 exitValue = amount × exitPrice × (100 - exitFee) / 100
 profitUSD = exitValue - sumPlusFee
-
-For parent trades with partial closes:
-proportion = remainingAmount / originalAmount
-proportionalSumPlusFee = sumPlusFee × proportion
-exitValue = remainingAmount × exitPrice × (100 - exitFee) / 100
-profitUSD = exitValue - proportionalSumPlusFee
 ```
+
+Note: Split positions are treated as independent trades, each with their own `amount` and `sumPlusFee`.
 
 ### Statistics Breakdown
 
@@ -60,11 +56,11 @@ Time series data showing profit accumulation over time, sorted by close date.
 
 ## Important Edge Cases
 
-### Partial Closes
-When calculating profit for parent trades that were partially closed:
-1. Use `remainingAmount` instead of original `amount`
-2. Calculate proportional entry cost based on remaining portion
-3. Formula handles both parent trades and partial close records correctly
+### Split Positions
+Split positions are treated as independent trades in statistics:
+1. Each split has its own `amount` and `sumPlusFee` values
+2. Each split can be closed independently
+3. Statistics aggregate all closed trades including splits
 
 ### Zero Exit Price
 Trades without exit price (OPEN/FILLED status) show 0 profit in statistics.

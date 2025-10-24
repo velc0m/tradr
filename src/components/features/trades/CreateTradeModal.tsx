@@ -1,330 +1,675 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useToast } from '@/components/ui/use-toast';
-import { IPortfolio, ITrade } from '@/types';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
+import {Label} from '@/components/ui/label';
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
+import {RadioGroup, RadioGroupItem} from '@/components/ui/radio-group';
+import {useToast} from '@/components/ui/use-toast';
+import {IPortfolio, ITrade, TradeStatus, TradeType} from '@/types';
+import {cn} from '@/lib/utils';
 
 interface CreateTradeModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  portfolio: IPortfolio;
-  onSuccess?: (trade: ITrade) => void;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    portfolio: IPortfolio;
+    onSuccess?: (trade: ITrade) => void;
+    prefilledData?: {
+        coinSymbol?: string;
+        tradeType?: TradeType;
+        parentTradeId?: string;
+        salePrice?: number;
+        maxAmount?: number;
+    };
 }
 
 export function CreateTradeModal({
-  open,
-  onOpenChange,
-  portfolio,
-  onSuccess,
-}: CreateTradeModalProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [coinSymbol, setCoinSymbol] = useState('');
-  const [entryPrice, setEntryPrice] = useState('');
-  const [depositPercent, setDepositPercent] = useState('');
-  const [entryFee, setEntryFee] = useState('0.25');
-  const [feeLevel, setFeeLevel] = useState('');
-  const [amount, setAmount] = useState('');
-  const [sumPlusFee, setSumPlusFee] = useState('');
+                                     open,
+                                     onOpenChange,
+                                     portfolio,
+                                     onSuccess,
+                                     prefilledData,
+                                 }: CreateTradeModalProps) {
+    const [isLoading, setIsLoading] = useState(false);
+    const [tradeType, setTradeType] = useState<TradeType>(TradeType.LONG);
+    const [coinSymbol, setCoinSymbol] = useState('');
+    const [entryPrice, setEntryPrice] = useState('');
+    const [depositPercent, setDepositPercent] = useState('');
+    const [entryFee, setEntryFee] = useState('0.25');
+    const [feeLevel, setFeeLevel] = useState('');
+    const [amount, setAmount] = useState('');
+    const [sumPlusFee, setSumPlusFee] = useState('');
+    const [openTrades, setOpenTrades] = useState<ITrade[]>([]);
+    const [parentTradeId, setParentTradeId] = useState<string | undefined>(undefined);
 
-  // Get today's date in local timezone
-  const getLocalDateString = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+    // Get today's date in local timezone
+    const getLocalDateString = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
 
-  const [openDate, setOpenDate] = useState(getLocalDateString());
-  const { toast } = useToast();
+    const [openDate, setOpenDate] = useState(getLocalDateString());
+    const {toast} = useToast();
 
-  // Fetch and auto-fill entry fee when modal opens
-  useEffect(() => {
-    if (open) {
-      fetchEntryFee();
-    }
-  }, [open]);
+    // Fetch entry fee and open trades when modal opens
+    useEffect(() => {
+        if (open) {
+            fetchEntryFee();
+            fetchOpenTrades();
+        }
+    }, [open]);
 
-  const fetchEntryFee = async () => {
-    try {
-      const response = await fetch(
-        `/api/portfolios/${portfolio._id}/calculate-fee?type=entry`
-      );
-      const data = await response.json();
+    // Auto-calculate depositPercent for SHORT
+    useEffect(() => {
+        if (tradeType === TradeType.SHORT && portfolio && sumPlusFee) {
+            const calculatedPercent = (parseFloat(sumPlusFee) / portfolio.totalDeposit) * 100;
+            if (calculatedPercent > 0) {
+                setDepositPercent(calculatedPercent.toFixed(2));
+            }
+        }
+    }, [tradeType, sumPlusFee, portfolio]);
 
-      if (data.success && data.data) {
-        setEntryFee(data.data.feePercent.toFixed(3));
-        setFeeLevel(data.data.level);
-      }
-    } catch (error) {
-      console.error('Failed to fetch entry fee:', error);
-      // Silently fail, keep default value
-    }
-  };
+    // Auto-calculate amount for LONG trades
+    useEffect(() => {
+        if (tradeType === TradeType.LONG && sumPlusFee && entryPrice && entryFee && coinSymbol) {
+            const gross = parseFloat(sumPlusFee);
+            const price = parseFloat(entryPrice);
+            const fee = parseFloat(entryFee);
 
-  // Calculate Amount in USD
-  const amountUSD = useMemo(() => {
-    const deposit = portfolio.totalDeposit;
-    const percent = parseFloat(depositPercent) || 0;
-    return (deposit * percent) / 100;
-  }, [portfolio.totalDeposit, depositPercent]);
+            if (gross > 0 && price > 0) {
+                const netAmount = gross * 100 / (100 + fee);
+                const calculatedAmount = netAmount / price;
 
-  // Calculate Sum (without fee)
-  const sumWithoutFee = useMemo(() => {
-    const total = parseFloat(sumPlusFee) || 0;
-    const fee = parseFloat(entryFee) || 0;
-    return (total * (100 - fee)) / 100;
-  }, [sumPlusFee, entryFee]);
+                if (calculatedAmount > 0) {
+                    const coin = portfolio.coins.find(c => c.symbol === coinSymbol);
+                    const decimalPlaces = coin?.decimalPlaces || 8;
+                    setAmount(calculatedAmount.toFixed(decimalPlaces));
+                }
+            }
+        }
+    }, [tradeType, sumPlusFee, entryPrice, entryFee, coinSymbol, portfolio.coins]);
 
-  // Calculate Entry Fee in USD
-  const entryFeeUSD = useMemo(() => {
-    const total = parseFloat(sumPlusFee) || 0;
-    const fee = parseFloat(entryFee) || 0;
-    return (total * fee) / 100;
-  }, [sumPlusFee, entryFee]);
+    // Auto-calculate sumPlusFee for SHORT trades
+    useEffect(() => {
+        if (tradeType === TradeType.SHORT && amount && entryPrice) {
+            const amt = parseFloat(amount);
+            const price = parseFloat(entryPrice);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+            if (amt > 0 && price > 0) {
+                const calculatedSumPlusFee = amt * price;
+                if (calculatedSumPlusFee > 0) {
+                    setSumPlusFee(calculatedSumPlusFee.toFixed(2));
+                }
+            }
+        }
+    }, [tradeType, amount, entryPrice]);
 
-    try {
-      const response = await fetch(`/api/portfolios/${portfolio._id}/trades`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          coinSymbol,
-          entryPrice: parseFloat(entryPrice),
-          depositPercent: parseFloat(depositPercent),
-          entryFee: parseFloat(entryFee),
-          amount: parseFloat(amount),
-          sumPlusFee: parseFloat(sumPlusFee),
-          openDate: openDate, // Send selected date as string
-        }),
-      });
+    // Handle prefilled data
+    useEffect(() => {
+        if (open && prefilledData) {
+            if (prefilledData.coinSymbol) setCoinSymbol(prefilledData.coinSymbol);
+            if (prefilledData.tradeType) setTradeType(prefilledData.tradeType);
+            if (prefilledData.salePrice) setEntryPrice(prefilledData.salePrice.toString());
+            if (prefilledData.maxAmount) setAmount(prefilledData.maxAmount.toString());
+            if (prefilledData.parentTradeId) setParentTradeId(prefilledData.parentTradeId);
+        }
+    }, [open, prefilledData]);
 
-      const data = await response.json();
+    const fetchEntryFee = async () => {
+        try {
+            // For SHORT with parentTradeId, include parent trade in volume calculation
+            const includeParam = parentTradeId ? `&includeTradeId=${parentTradeId}` : '';
+            const response = await fetch(
+                `/api/portfolios/${portfolio._id}/calculate-fee?type=entry${includeParam}`
+            );
+            const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create trade');
-      }
+            if (data.success && data.data) {
+                setEntryFee(data.data.feePercent.toFixed(3));
+                setFeeLevel(data.data.level);
+            }
+        } catch (error) {
+            console.error('Failed to fetch entry fee:', error);
+            // Silently fail, keep default value
+        }
+    };
 
-      toast({
-        title: 'Success',
-        description: 'Trade created successfully',
-      });
+    const fetchOpenTrades = async () => {
+        try {
+            const response = await fetch(`/api/portfolios/${portfolio._id}/trades`);
+            const data = await response.json();
 
-      // Reset form
-      setCoinSymbol('');
-      setEntryPrice('');
-      setDepositPercent('');
-      setEntryFee('0.25');
-      setAmount('');
-      setSumPlusFee('');
-      setOpenDate(getLocalDateString());
+            if (data.success && data.data) {
+                // Filter only OPEN and FILLED trades
+                const activeTrades = data.data.filter(
+                    (trade: ITrade) =>
+                        trade.status === TradeStatus.OPEN || trade.status === TradeStatus.FILLED
+                );
+                setOpenTrades(activeTrades);
+            }
+        } catch (error) {
+            console.error('Failed to fetch trades:', error);
+            setOpenTrades([]);
+        }
+    };
 
-      // Close modal
-      onOpenChange(false);
+    // Check if SHORT is available for selected coin
+    const shortAvailability = useMemo(() => {
+        if (!coinSymbol) {
+            return {available: false, reason: 'Select a coin first'};
+        }
 
-      // Call success callback
-      if (onSuccess && data.data) {
-        onSuccess(data.data);
-      }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description:
-          error instanceof Error ? error.message : 'Failed to create trade',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+        // If opening SHORT from specific LONG (parentTradeId exists in prefilledData)
+        if (prefilledData?.parentTradeId && prefilledData?.maxAmount) {
+            return {
+                available: true,
+                amount: prefilledData.maxAmount,
+                fromInitialCoins: 0,
+                fromOpenTrades: prefilledData.maxAmount,
+                isFromSpecificLong: true,
+            };
+        }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Create New Trade</DialogTitle>
-          <DialogDescription>
-            Add a new trade to your portfolio
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="coin">
-                Coin <span className="text-destructive">*</span>
-              </Label>
-              <Select value={coinSymbol} onValueChange={setCoinSymbol} required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select coin" />
-                </SelectTrigger>
-                <SelectContent>
-                  {portfolio.coins.map((coin) => (
-                    <SelectItem key={coin.symbol} value={coin.symbol}>
-                      {coin.symbol}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        // For standalone SHORT: ONLY use initial coins (NOT open LONG positions)
+        // User can open SHORT from LONG by clicking "Open SHORT" button on LONG position
+        const initialCoin = portfolio.initialCoins?.find(
+            (coin) => coin.symbol === coinSymbol
+        );
 
-            <div className="grid gap-2">
-              <Label htmlFor="entryPrice">
-                Entry Price <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="entryPrice"
-                type="number"
-                placeholder="0.00"
-                value={entryPrice}
-                onChange={(e) => setEntryPrice(e.target.value)}
-                step="0.000001"
-                min="0"
-                required
-                disabled={isLoading}
-              />
-            </div>
+        const availableAmount = initialCoin?.amount || 0;
 
-            <div className="grid gap-2">
-              <Label htmlFor="depositPercent">
-                Deposit % <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="depositPercent"
-                type="number"
-                placeholder="0"
-                value={depositPercent}
-                onChange={(e) => setDepositPercent(e.target.value)}
-                step="0.01"
-                min="0"
-                max="100"
-                required
-                disabled={isLoading}
-              />
-              {depositPercent && (
-                <p className="text-xs text-muted-foreground">
-                  Amount (USD): ${amountUSD.toFixed(2)}
-                </p>
-              )}
-            </div>
+        if (availableAmount > 0) {
+            return {
+                available: true,
+                amount: availableAmount,
+                fromInitialCoins: availableAmount,
+                fromOpenTrades: 0,
+                isFromSpecificLong: false,
+            };
+        }
 
-            <div className="grid gap-2">
-              <Label htmlFor="entryFee">
-                Entry Fee %
-                {feeLevel && (
-                  <span className="text-xs text-muted-foreground ml-2">
+        return {
+            available: false,
+            reason: 'No initial coins available for SHORT',
+            amount: 0,
+        };
+    }, [coinSymbol, portfolio.initialCoins, prefilledData]);
+
+    // Calculate Amount in USD
+    const amountUSD = useMemo(() => {
+        const deposit = portfolio.totalDeposit;
+        const percent = parseFloat(depositPercent) || 0;
+        return (deposit * percent) / 100;
+    }, [portfolio.totalDeposit, depositPercent]);
+
+    // Calculate Sum (without fee)
+    const sumWithoutFee = useMemo(() => {
+        const total = parseFloat(sumPlusFee) || 0;
+        const fee = parseFloat(entryFee) || 0;
+        return (total * (100 - fee)) / 100;
+    }, [sumPlusFee, entryFee]);
+
+    // Calculate Entry Fee in USD
+    const entryFeeUSD = useMemo(() => {
+        const total = parseFloat(sumPlusFee) || 0;
+        const fee = parseFloat(entryFee) || 0;
+        return (total * fee) / 100;
+    }, [sumPlusFee, entryFee]);
+
+    // Calculate expected sum based on deposit %
+    const expectedSum = useMemo(() => {
+        const deposit = portfolio.totalDeposit;
+        const percent = parseFloat(depositPercent) || 0;
+        return (deposit * percent) / 100;
+    }, [portfolio.totalDeposit, depositPercent]);
+
+    // Check if there's a significant difference (more than 10%)
+    const sumDifferenceWarning = useMemo(() => {
+        const actualSum = parseFloat(sumPlusFee) || 0;
+        const expected = expectedSum;
+
+        // Only show warning if both values are present
+        if (actualSum === 0 || expected === 0) {
+            return null;
+        }
+
+        const difference = Math.abs(actualSum - expected);
+        const percentDifference = (difference / expected) * 100;
+
+        // Show warning if difference is more than 10%
+        if (percentDifference > 10) {
+            return {
+                actualSum,
+                expectedSum: expected,
+                percentDifference: percentDifference.toFixed(1),
+            };
+        }
+
+        return null;
+    }, [sumPlusFee, expectedSum]);
+
+    // Handle trade type change - reset form when switching
+    const handleTradeTypeChange = (newType: string) => {
+        setTradeType(newType as TradeType);
+        // Reset form fields when switching type
+        setEntryPrice('');
+        setDepositPercent('');
+        setAmount('');
+        setSumPlusFee('');
+    };
+
+    // Calculate Net Received for SHORT (after entry fee)
+    const netReceivedUSD = useMemo(() => {
+        if (tradeType === TradeType.SHORT) {
+            const gross = parseFloat(sumPlusFee) || 0;
+            const fee = parseFloat(entryFee) || 0;
+            return gross * (100 - fee) / 100;
+        }
+        return 0;
+    }, [tradeType, sumPlusFee, entryFee]);
+
+    // Dynamic labels based on trade type
+    const labels = useMemo(() => {
+        if (tradeType === TradeType.SHORT) {
+            return {
+                entryPrice: 'Sale Price (USD)',
+                sumPlusFee: 'Gross Sale Value (USD)',
+                amount: 'Sale Amount (coins)',
+                depositPercent: 'Deposit %',
+            };
+        }
+        return {
+            entryPrice: 'Entry Price (USD)',
+            sumPlusFee: 'Sum + Fee (USD)',
+            amount: 'Amount (coins)',
+            depositPercent: 'Deposit %',
+        };
+    }, [tradeType]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+
+        try {
+            const payload: any = {
+                coinSymbol,
+                tradeType,
+                entryPrice: parseFloat(entryPrice),
+                depositPercent: parseFloat(depositPercent),
+                entryFee: parseFloat(entryFee),
+                amount: parseFloat(amount),
+                sumPlusFee: parseFloat(sumPlusFee),
+                openDate: openDate,
+            };
+
+            // Add parentTradeId for SHORT trades from LONG positions
+            if (tradeType === TradeType.SHORT && parentTradeId) {
+                payload.parentTradeId = parentTradeId;
+                // Automatically mark as averaging SHORT (internal operation)
+                payload.isAveragingShort = true;
+            }
+
+            const response = await fetch(`/api/portfolios/${portfolio._id}/trades`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to create trade');
+            }
+
+            toast({
+                title: 'Success',
+                description: 'Trade created successfully',
+            });
+
+            // Reset form
+            setTradeType(TradeType.LONG);
+            setCoinSymbol('');
+            setEntryPrice('');
+            setDepositPercent('');
+            setEntryFee('0.25');
+            setAmount('');
+            setSumPlusFee('');
+            setOpenDate(getLocalDateString());
+            setParentTradeId(undefined);
+
+            // Close modal
+            onOpenChange(false);
+
+            // Call success callback
+            if (onSuccess && data.data) {
+                onSuccess(data.data);
+            }
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description:
+                    error instanceof Error ? error.message : 'Failed to create trade',
+                variant: 'destructive',
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                    <DialogTitle>Create New Trade</DialogTitle>
+                    <DialogDescription>
+                        Add a new trade to your portfolio
+                    </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit}>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="coin">
+                                Coin <span className="text-destructive">*</span>
+                            </Label>
+                            <Select
+                                value={coinSymbol}
+                                onValueChange={setCoinSymbol}
+                                required
+                                disabled={isLoading || !!prefilledData?.coinSymbol}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select coin"/>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {portfolio.coins.map((coin) => (
+                                        <SelectItem key={coin.symbol} value={coin.symbol}>
+                                            {coin.symbol}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label>
+                                Trade Type <span className="text-destructive">*</span>
+                            </Label>
+                            <RadioGroup
+                                value={tradeType}
+                                onValueChange={handleTradeTypeChange}
+                                className="flex gap-4"
+                                disabled={!!prefilledData?.tradeType}
+                            >
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem
+                                        value={TradeType.LONG}
+                                        id="long"
+                                        disabled={!!prefilledData?.tradeType}
+                                    />
+                                    <Label htmlFor="long" className="font-normal cursor-pointer">
+                                        LONG
+                                    </Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem
+                                        value={TradeType.SHORT}
+                                        id="short"
+                                        disabled={!shortAvailability.available || !!prefilledData?.tradeType}
+                                    />
+                                    <Label
+                                        htmlFor="short"
+                                        className={cn(
+                                            "font-normal cursor-pointer",
+                                            (!shortAvailability.available || !!prefilledData?.tradeType) && "opacity-50 cursor-not-allowed"
+                                        )}
+                                    >
+                                        SHORT
+                                    </Label>
+                                </div>
+                            </RadioGroup>
+                            {!shortAvailability.available && coinSymbol && (
+                                <p className="text-xs text-muted-foreground">
+                                    {shortAvailability.reason}
+                                </p>
+                            )}
+                            {shortAvailability.available && tradeType === TradeType.SHORT && (
+                                <div className="text-xs text-muted-foreground">
+                                    Available: {shortAvailability.amount?.toFixed(8)} {coinSymbol}
+                                    {!shortAvailability.isFromSpecificLong && shortAvailability.fromInitialCoins !== undefined && shortAvailability.fromInitialCoins > 0 && (
+                                        <span className="text-blue-400">
+                      {' '}({shortAvailability.fromInitialCoins.toFixed(8)} from initial coins)
+                    </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="entryPrice">
+                                {labels.entryPrice} <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                                id="entryPrice"
+                                type="number"
+                                placeholder="0.00"
+                                value={entryPrice}
+                                onChange={(e) => setEntryPrice(e.target.value)}
+                                step="0.000001"
+                                min="0"
+                                required
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        {/* Only show Deposit % for LONG trades */}
+                        {tradeType === TradeType.LONG && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="depositPercent">
+                                    Deposit % <span className="text-destructive">*</span>
+                                </Label>
+                                <Input
+                                    id="depositPercent"
+                                    type="number"
+                                    placeholder="0"
+                                    value={depositPercent}
+                                    onChange={(e) => setDepositPercent(e.target.value)}
+                                    step="0.01"
+                                    min="0"
+                                    max="100"
+                                    required
+                                    disabled={isLoading}
+                                />
+                                {depositPercent && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Amount (USD): ${amountUSD.toFixed(2)}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="entryFee">
+                                Entry Fee %
+                                {feeLevel && (
+                                    <span className="text-xs text-muted-foreground ml-2">
                     ({feeLevel})
                   </span>
-                )}
-              </Label>
-              <Input
-                id="entryFee"
-                type="number"
-                placeholder="0.1"
-                value={entryFee}
-                onChange={(e) => setEntryFee(e.target.value)}
-                step="0.001"
-                min="0"
-                disabled={isLoading}
-              />
-              {entryFeeUSD > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Entry Fee (USD): ${entryFeeUSD.toFixed(2)}
-                </p>
-              )}
-            </div>
+                                )}
+                            </Label>
+                            <Input
+                                id="entryFee"
+                                type="number"
+                                placeholder="0.1"
+                                value={entryFee}
+                                onChange={(e) => setEntryFee(e.target.value)}
+                                step="0.001"
+                                min="0"
+                                disabled={isLoading}
+                            />
+                            {entryFeeUSD > 0 && tradeType === TradeType.LONG && (
+                                <p className="text-xs text-muted-foreground">
+                                    Entry Fee (USD): ${entryFeeUSD.toFixed(2)}
+                                </p>
+                            )}
+                        </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="sumPlusFee">
-                Sum + Fee (USD) <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="sumPlusFee"
-                type="number"
-                placeholder="0.00"
-                value={sumPlusFee}
-                onChange={(e) => setSumPlusFee(e.target.value)}
-                step="0.01"
-                min="0"
-                required
-                disabled={isLoading}
-              />
-              {sumPlusFee && (
-                <p className="text-xs text-muted-foreground">
-                  Sum (USD): ${sumWithoutFee.toFixed(2)}
-                </p>
-              )}
-            </div>
+                        {/* For SHORT: Amount field comes BEFORE Sum+Fee */}
+                        {tradeType === TradeType.SHORT && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="amount">
+                                    {labels.amount} <span className="text-destructive">*</span>
+                                </Label>
+                                <Input
+                                    id="amount"
+                                    type="number"
+                                    placeholder="0.00000000"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    step="0.00000001"
+                                    min="0"
+                                    required
+                                    disabled={isLoading || !!prefilledData?.parentTradeId}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    {prefilledData?.parentTradeId
+                                        ? 'Amount locked (from parent LONG)'
+                                        : 'Enter the amount of coins to sell'}
+                                </p>
+                            </div>
+                        )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="amount">
-                Amount (coins) <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="amount"
-                type="number"
-                placeholder="0.00000000"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                step="0.00000001"
-                min="0"
-                required
-                disabled={isLoading}
-              />
-              <p className="text-xs text-muted-foreground">
-                Enter the amount from your exchange
-              </p>
-            </div>
+                        {/* For SHORT: Gross Sale Value (auto-calculated, readonly) */}
+                        {tradeType === TradeType.SHORT && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="sumPlusFee">
+                                    {labels.sumPlusFee}
+                                </Label>
+                                <Input
+                                    id="sumPlusFee"
+                                    type="number"
+                                    placeholder="0.00"
+                                    value={sumPlusFee}
+                                    readOnly
+                                    disabled
+                                    className="bg-muted cursor-not-allowed"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Calculated: {amount && entryPrice ? `${amount} × $${entryPrice}` : 'Enter amount and price'}
+                                </p>
+                                {netReceivedUSD > 0 && (
+                                    <p className="text-xs text-green-600 dark:text-green-500">
+                                        Net Received (after {entryFee}% fee): ${netReceivedUSD.toFixed(2)}
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="openDate">Open Date</Label>
-              <Input
-                id="openDate"
-                type="date"
-                value={openDate}
-                onChange={(e) => setOpenDate(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-          </div>
+                        {/* For LONG: Sum+Fee field (user input) */}
+                        {tradeType === TradeType.LONG && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="sumPlusFee">
+                                    {labels.sumPlusFee} <span className="text-destructive">*</span>
+                                </Label>
+                                <Input
+                                    id="sumPlusFee"
+                                    type="number"
+                                    placeholder="0.00"
+                                    value={sumPlusFee}
+                                    onChange={(e) => setSumPlusFee(e.target.value)}
+                                    step="0.01"
+                                    min="0"
+                                    required
+                                    disabled={isLoading}
+                                />
+                                {sumPlusFee && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Sum (USD): ${sumWithoutFee.toFixed(2)}
+                                    </p>
+                                )}
+                                {sumDifferenceWarning && (
+                                    <div
+                                        className="flex items-start gap-2 p-2 rounded-md bg-yellow-500/10 border border-yellow-500/20">
+                                        <span className="text-yellow-600 dark:text-yellow-500">⚠️</span>
+                                        <p className="text-xs text-yellow-600 dark:text-yellow-500 flex-1">
+                                            Sum+Fee (${sumDifferenceWarning.actualSum.toLocaleString('en-US', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2
+                                        })}) significantly differs from calculated amount
+                                            (${sumDifferenceWarning.expectedSum.toLocaleString('en-US', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2
+                                        })}) based on {depositPercent}% deposit
+                                            ({sumDifferenceWarning.percentDifference}% difference)
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isLoading}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Creating...' : 'Create Trade'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+                        {/* For LONG: Amount field (auto-calculated from Sum+Fee) */}
+                        {tradeType === TradeType.LONG && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="amount">
+                                    {labels.amount} <span className="text-destructive">*</span>
+                                </Label>
+                                <Input
+                                    id="amount"
+                                    type="number"
+                                    placeholder="0.00000000"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    step="0.00000001"
+                                    min="0"
+                                    required
+                                    disabled={isLoading}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Auto-calculated (editable)
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="openDate">Open Date</Label>
+                            <Input
+                                id="openDate"
+                                type="date"
+                                value={openDate}
+                                onChange={(e) => setOpenDate(e.target.value)}
+                                disabled={isLoading}
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => onOpenChange(false)}
+                            disabled={isLoading}
+                        >
+                            Cancel
+                        </Button>
+                        <Button type="submit" disabled={isLoading}>
+                            {isLoading ? 'Creating...' : 'Create Trade'}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
 }

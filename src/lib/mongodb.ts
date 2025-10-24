@@ -30,6 +30,11 @@ if (!global.mongooseCache) {
  * Implements connection caching for serverless environments
  */
 async function connectDB(): Promise<typeof mongoose> {
+  // Check if already connected (important for tests with MongoDB Memory Server)
+  if (mongoose.connection.readyState === 1) {
+    return mongoose;
+  }
+
   if (cached.conn) {
     return cached.conn;
   }

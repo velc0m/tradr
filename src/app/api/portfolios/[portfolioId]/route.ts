@@ -25,6 +25,14 @@ const portfolioCoinSchema = z.object({
     .max(8, 'Decimal places cannot exceed 8'),
 });
 
+const initialCoinSchema = z.object({
+  symbol: z.string().min(1, 'Coin symbol is required').toUpperCase(),
+  amount: z
+    .number()
+    .min(0, 'Amount cannot be negative')
+    .positive('Amount must be greater than 0'),
+});
+
 const updatePortfolioSchema = z.object({
   name: z
     .string()
@@ -50,6 +58,7 @@ const updatePortfolioSchema = z.object({
         message: 'Total coin percentages must equal 100%',
       }
     ),
+  initialCoins: z.array(initialCoinSchema).optional(),
 });
 
 /**
@@ -90,6 +99,8 @@ export async function GET(
         { status: 403 }
       );
     }
+
+    console.log('GET portfolio - returning data:', JSON.stringify(portfolio.toObject(), null, 2));
 
     return NextResponse.json({
       success: true,
@@ -154,6 +165,7 @@ export async function PUT(
     portfolio.name = validatedData.name;
     portfolio.totalDeposit = validatedData.totalDeposit;
     portfolio.coins = validatedData.coins;
+    portfolio.initialCoins = validatedData.initialCoins || [];
 
     await portfolio.save();
 

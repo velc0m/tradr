@@ -86,9 +86,9 @@ describe('Split Trade API Tests', () => {
             expect(splitTrades[0].amount).toBe(0.006);
             expect(splitTrades[1].amount).toBe(0.004);
 
-            // Verify proportional sumPlusFee
-            expect(splitTrades[0].sumPlusFee).toBeCloseTo(606, 0); // 0.006/0.01 * 1010
-            expect(splitTrades[1].sumPlusFee).toBeCloseTo(404, 0); // 0.004/0.01 * 1010
+            // Verify sumPlusFee calculation: Part1 = amount × entryPrice, Part2 = remainder
+            expect(splitTrades[0].sumPlusFee).toBeCloseTo(600, 0); // 0.006 × 100000
+            expect(splitTrades[1].sumPlusFee).toBeCloseTo(410, 0); // 1010 - 600
 
             // Verify all splits have same entryPrice, fees, dates
             expect(splitTrades[0].entryPrice).toBe(100000);
@@ -143,11 +143,10 @@ describe('Split Trade API Tests', () => {
             expect(splitTrades[1].amount).toBeCloseTo(0.3, 6);
             expect(splitTrades[2].amount).toBeCloseTo(0.166, 6);
 
-            // Verify proportional calculations
-            const totalAmount = 0.666;
-            expect(splitTrades[0].sumPlusFee).toBeCloseTo((0.2 / totalAmount) * 2002, 1);
-            expect(splitTrades[1].sumPlusFee).toBeCloseTo((0.3 / totalAmount) * 2002, 1);
-            expect(splitTrades[2].sumPlusFee).toBeCloseTo((0.166 / totalAmount) * 2002, 1);
+            // Verify sumPlusFee calculation: Part1/Part2 = amount × entryPrice, Part3 = remainder
+            expect(splitTrades[0].sumPlusFee).toBeCloseTo(600, 1); // 0.2 × 3000
+            expect(splitTrades[1].sumPlusFee).toBeCloseTo(900, 1); // 0.3 × 3000
+            expect(splitTrades[2].sumPlusFee).toBeCloseTo(502, 1); // 2002 - 600 - 900
         });
 
         it('should split a FILLED trade into 5 parts (maximum)', async () => {

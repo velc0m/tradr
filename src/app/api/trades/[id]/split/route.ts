@@ -106,11 +106,25 @@ export async function POST(
 
     // Create new split positions
     const splitTrades = [];
+    let accumulatedSumPlusFee = 0;
 
-    for (const amount of validatedData.amounts) {
-      // Calculate proportional sumPlusFee for this part
-      const proportion = amount / originalTrade.amount;
-      const proportionalSumPlusFee = originalTrade.sumPlusFee * proportion;
+    for (let i = 0; i < validatedData.amounts.length; i++) {
+      const amount = validatedData.amounts[i];
+      const isLastPart = i === validatedData.amounts.length - 1;
+
+      // Calculate sumPlusFee for this part
+      // For all parts except the last: sumPlusFee = amount × entryPrice
+      // For the last part: sumPlusFee = remainder (to avoid rounding errors)
+      let splitSumPlusFee: number;
+
+      if (isLastPart) {
+        // Last part gets the remainder to ensure exact sum
+        splitSumPlusFee = originalTrade.sumPlusFee - accumulatedSumPlusFee;
+      } else {
+        // Calculate as amount × entryPrice
+        splitSumPlusFee = amount * originalTrade.entryPrice;
+        accumulatedSumPlusFee += splitSumPlusFee;
+      }
 
       // Create new trade with same parameters but different amount
       const splitTrade = new Trade({
@@ -121,7 +135,7 @@ export async function POST(
         entryPrice: originalTrade.entryPrice,
         depositPercent: originalTrade.depositPercent,
         entryFee: originalTrade.entryFee,
-        sumPlusFee: proportionalSumPlusFee,
+        sumPlusFee: splitSumPlusFee,
         amount: amount,
         initialEntryPrice: originalTrade.entryPrice, // Use entryPrice for each split
         initialAmount: amount, // Use the split amount for each part

@@ -72,10 +72,25 @@ export function SplitTradeModal({
     const isValid = Math.abs(remaining) < tolerance && parsedAmounts.every(a => a > 0);
 
     // Calculate preview for each part
-    const previews = parsedAmounts.map(amt => {
+    // Use same logic as API: Part 1..N-1 = amount × entryPrice, Part N = remainder
+    const previews = parsedAmounts.map((amt, index) => {
         if (amt <= 0) return null;
+
+        let sumPlusFee: number;
+        const isLastPart = index === parsedAmounts.length - 1;
+
+        if (isLastPart) {
+            // Last part gets remainder
+            const previousSum = parsedAmounts.slice(0, index).reduce((sum, a, i) => {
+                return sum + (a > 0 ? a * trade.entryPrice : 0);
+            }, 0);
+            sumPlusFee = trade.sumPlusFee - previousSum;
+        } else {
+            // Other parts: amount × entryPrice
+            sumPlusFee = amt * trade.entryPrice;
+        }
+
         const proportion = amt / trade.amount;
-        const sumPlusFee = trade.sumPlusFee * proportion;
         const percentage = (proportion * 100).toFixed(2);
         return {amount: amt, sumPlusFee, percentage};
     });

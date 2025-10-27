@@ -20,7 +20,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import {EditPortfolioModal} from '@/components/features/portfolios/EditPortfolioModal';
 import {ExportPortfolioDialog} from '@/components/features/portfolios/ExportPortfolioDialog';
+import {PortfolioOverviewCard} from '@/components/features/portfolios/PortfolioOverviewCard';
+import {CoinAllocationCard} from '@/components/features/portfolios/CoinAllocationCard';
+import {QuickStatsCard} from '@/components/features/portfolios/QuickStatsCard';
 import {CreateTradeModal} from '@/components/features/trades/CreateTradeModal';
+import {OpenTradesTable} from '@/components/features/trades/OpenTradesTable';
+import {ClosedTradesFilters} from '@/components/features/trades/ClosedTradesFilters';
 import {EditTradeDialog} from '@/components/features/trades/EditTradeDialog';
 import {EditExitPriceModal} from '@/components/features/trades/EditExitPriceModal';
 import {MarkAsFilledDialog} from '@/components/features/trades/MarkAsFilledDialog';
@@ -51,6 +56,13 @@ import {
 } from 'lucide-react';
 import {useBlur} from '@/contexts/BlurContext';
 import {BlurredAmount} from '@/components/ui/BlurredAmount';
+import {
+    calculateProfitPercent,
+    calculateProfitUSD,
+    calculateProfitCoins,
+    formatPrice,
+    formatAmount
+} from '@/lib/trade-calculations';
 
 interface PortfolioPageProps {
     params: {
@@ -302,65 +314,6 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
         }
     };
 
-    const calculateProfitPercent = (trade: ITrade): number | null => {
-        if (!trade.exitPrice) return null;
-
-        if (trade.tradeType === TradeType.SHORT) {
-            // SHORT: profit % based on coins gained
-            const entryFeeVal = trade.entryFee || 0;
-            const netReceived = trade.sumPlusFee * (100 - entryFeeVal) / 100;
-            const exitFeeVal = trade.exitFee || 0;
-            const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
-            const coinsBoughtBack = netReceived / buyBackPriceWithFee;
-            return ((coinsBoughtBack / trade.amount - 1) * 100);
-        }
-
-        // LONG: profit % based on price change minus fees
-        return (
-            ((trade.exitPrice / trade.entryPrice - 1) * 100) -
-            trade.entryFee -
-            (trade.exitFee || 0)
-        );
-    };
-
-    // Calculate Profit USD (LONG only)
-    const calculateProfitUSD = (trade: ITrade): number | null => {
-        if (!trade.exitPrice || trade.tradeType === TradeType.LONG) {
-            if (!trade.exitPrice) return null;
-            const exitValue = trade.amount * trade.exitPrice * (100 - (trade.exitFee || 0)) / 100;
-            return exitValue - trade.sumPlusFee;
-        }
-        return null;
-    };
-
-    // Calculate Profit Coins (SHORT only)
-    const calculateProfitCoins = (trade: ITrade): number | null => {
-        if (!trade.exitPrice || trade.tradeType !== TradeType.SHORT) return null;
-
-        const entryFeeVal = trade.entryFee || 0;
-        const netReceived = trade.sumPlusFee * (100 - entryFeeVal) / 100;
-        const exitFeeVal = trade.exitFee || 0;
-        const buyBackPriceWithFee = trade.exitPrice * (100 + exitFeeVal) / 100;
-        const coinsBoughtBack = netReceived / buyBackPriceWithFee;
-
-        return coinsBoughtBack - trade.amount;
-    };
-
-    const formatPrice = (price: number): string => {
-        // Format USD prices with 2 decimal places
-        const formatted = price.toFixed(2);
-        const trimmed = formatted.replace(/\.?0+$/, '');
-        return trimmed;
-    };
-
-    const formatAmount = (amount: number): string => {
-        // Show crypto amounts with max 8 decimal places (Bitcoin standard)
-        // Remove trailing zeros
-        const formatted = amount.toFixed(8);
-        const trimmed = formatted.replace(/\.?0+$/, '');
-        return trimmed;
-    };
-
     // Check if LONG trade has active SHORT positions
     const hasActiveShortsOnLong = (longTradeId: string): boolean => {
         return trades.some(
@@ -594,472 +547,49 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                     </div>
 
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Portfolio Overview</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div>
-                                    <div className="text-sm text-muted-foreground">
-                                        Cash Deposit (USD)
-                                    </div>
-                                    <div className="text-3xl font-bold">
-                                        <BlurredAmount amount={portfolio.totalDeposit}/>
-                                    </div>
-                                </div>
-                                {portfolio.initialCoins && portfolio.initialCoins.length > 0 && (
-                                    <div className="pt-2 border-t">
-                                        <div className="text-sm text-muted-foreground mb-2">
-                                            Initial Coins
-                                        </div>
-                                        <div className="space-y-1">
-                                            {portfolio.initialCoins.map((coin, idx) => (
-                                                <div key={idx} className="text-sm font-medium text-blue-400">
-                                                    {formatAmount(coin.amount)} {coin.symbol}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="pt-2 border-t">
-                                    <div className="text-sm text-muted-foreground mb-2">
-                                        Created
-                                    </div>
-                                    <div className="text-sm">
-                                        {new Date(portfolio.createdAt).toLocaleDateString('en-US', {
-                                            year: 'numeric',
-                                            month: 'long',
-                                            day: 'numeric',
-                                        })}
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <PortfolioOverviewCard portfolio={portfolio} formatAmount={formatAmount} />
 
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Coin Allocation</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-3">
-                                    {portfolio.coins.map((coin, index) => {
-                                        // Allocation based on cash deposit only
-                                        const allocation = (portfolio.totalDeposit * coin.percentage) / 100;
+                        <CoinAllocationCard portfolio={portfolio} openTrades={openTrades} formatAmount={formatAmount} />
 
-                                        // Initial coins for THIS specific coin (in amount, not value)
-                                        const initialCoinForSymbol = portfolio.initialCoins?.find(ic => ic.symbol === coin.symbol);
-                                        const initialCoinAmount = initialCoinForSymbol?.amount || 0;
-
-                                        // Calculate used amount from open/filled trades
-                                        const coinOpenTrades = openTrades.filter(t => t.coinSymbol === coin.symbol);
-                                        const usedInTrades = coinOpenTrades.reduce((sum, trade) => sum + trade.sumPlusFee, 0);
-
-                                        const usedPercent = allocation > 0 ? (usedInTrades / allocation) * 100 : 0;
-                                        const availablePercent = 100 - usedPercent;
-                                        const availableAmount = allocation - usedInTrades;
-
-                                        return (
-                                            <div
-                                                key={index}
-                                                className="p-3 rounded-lg bg-muted/50 space-y-2"
-                                            >
-                                                <div className="flex justify-between items-center">
-                                                    <div>
-                                                        <div className="font-semibold">{coin.symbol}</div>
-                                                        <div className="text-sm text-muted-foreground">
-                                                            {coin.percentage}% allocation
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="font-medium">
-                                                            <BlurredAmount amount={allocation}/>
-                                                        </div>
-                                                        <div className="text-xs text-muted-foreground">
-                                                            {coin.decimalPlaces} decimal places
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    {initialCoinAmount > 0 && (
-                                                        <div className="flex items-center justify-between text-xs">
-                                                            <span className="text-blue-400">Initial coins:</span>
-                                                            <span className="text-blue-400">
-                                {formatAmount(initialCoinAmount)} {coin.symbol}
-                              </span>
-                                                        </div>
-                                                    )}
-                                                    {usedInTrades > 0 && (
-                                                        <div className="flex items-center justify-between text-xs">
-                                                            <span
-                                                                className="text-muted-foreground">In open trades:</span>
-                                                            <span className="text-muted-foreground">
-                                <BlurredAmount amount={usedInTrades}/>
-                              </span>
-                                                        </div>
-                                                    )}
-                                                    <div
-                                                        className="flex items-center justify-between text-xs font-medium pt-1 border-t border-muted">
-                            <span className={availablePercent < 0 ? 'text-red-500' : 'text-green-500'}>
-                              Available: {availablePercent.toFixed(1)}%
-                            </span>
-                                                        <span
-                                                            className={availablePercent < 0 ? 'text-red-500' : 'text-green-500'}>
-                              <BlurredAmount amount={availableAmount} showSign={true}/>
-                            </span>
-                                                    </div>
-                                                    <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                                                        <div
-                                                            className={`h-full transition-all ${
-                                                                usedPercent > 100 ? 'bg-red-500' :
-                                                                    usedPercent > 80 ? 'bg-yellow-500' :
-                                                                        'bg-green-500'
-                                                            }`}
-                                                            style={{width: `${Math.min(usedPercent, 100)}%`}}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <BarChart3 className="h-5 w-5"/>
-                                    Quick Stats
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                {quickStats ? (
-                                    <>
-                                        <div>
-                                            <div className="text-sm text-muted-foreground mb-2">
-                                                Total Closed Trades
-                                            </div>
-                                            <div className="text-2xl font-bold">{quickStats.totalClosedTrades}</div>
-                                        </div>
-                                        <div>
-                                            <div className="text-sm text-muted-foreground mb-2">
-                                                Overall P/L
-                                            </div>
-                                            <div
-                                                className={`text-2xl font-bold ${quickStats.totalProfitUSD >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                <BlurredAmount
-                                                    amount={quickStats.totalProfitUSD}
-                                                    showSign={true}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="text-sm text-muted-foreground mb-2">
-                                                Win Rate
-                                            </div>
-                                            <div className="text-2xl font-bold">{quickStats.winRate.toFixed(2)}%</div>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="text-sm text-muted-foreground">Loading stats...</div>
-                                )}
-                                <Link href={`/dashboard/portfolio/${params.id}/stats`}>
-                                    <Button className="w-full mt-2" variant="outline">
-                                        <BarChart3 className="h-4 w-4 mr-2"/>
-                                        View Detailed Statistics
-                                    </Button>
-                                </Link>
-                            </CardContent>
-                        </Card>
+                        <QuickStatsCard quickStats={quickStats} portfolioId={params.id} />
                     </div>
 
-                    <Card>
-                        <CardHeader>
-                            <div className="flex justify-between items-center">
-                                <CardTitle>Open Trades</CardTitle>
-                                <Button onClick={() => setShowCreateTradeModal(true)}>
-                                    <Plus className="h-4 w-4 mr-2"/>
-                                    Add Trade
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            {openTrades.length === 0 ? (
-                                <div className="text-center py-12 text-muted-foreground">
-                                    No open trades. Click "Add Trade" to create one.
-                                </div>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead className="min-w-[60px]">Coin</TableHead>
-                                                <TableHead className="min-w-[150px]">Type</TableHead>
-                                                <TableHead className="min-w-[70px]">Status</TableHead>
-                                                <TableHead className="min-w-[100px]">Date</TableHead>
-                                                <TableHead className="min-w-[90px]">Entry Price</TableHead>
-                                                <TableHead className="min-w-[90px]">Sum+Fee</TableHead>
-                                                <TableHead className="min-w-[110px]">Amount</TableHead>
-                                                <TableHead className="min-w-[90px]">Exit Price</TableHead>
-                                                <TableHead className="min-w-[80px]">Profit %</TableHead>
-                                                <TableHead className="min-w-[120px]">Profit</TableHead>
-                                                <TableHead className="text-right min-w-[150px]">Actions</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {groupedOpenTrades.map((group) => {
-                                                const renderTradeRow = (trade: ITrade, isChild: boolean = false, splitInfo?: {
-                                                    part: number;
-                                                    total: number
-                                                }) => {
-                                                    const profitPercent = calculateProfitPercent(trade);
-                                                    const profitUSD = calculateProfitUSD(trade);
-                                                    const profitCoins = calculateProfitCoins(trade);
-                                                    const isLongWithActiveShorts = trade.tradeType === TradeType.LONG && hasActiveShortsOnLong(trade._id);
-
-                                                    return (
-                                                        <TableRow
-                                                            key={trade._id}
-                                                            className={`${isChild ? 'bg-muted/30' : ''} ${isLongWithActiveShorts ? 'opacity-50' : ''}`}
-                                                        >
-                                                            <TableCell className="font-medium">
-                                                                <div className="flex items-center gap-2">
-                                                                    {isChild && (
-                                                                        <CornerDownRight
-                                                                            className="h-4 w-4 text-muted-foreground"/>
-                                                                    )}
-                                                                    <span>{trade.coinSymbol}</span>
-                                                                </div>
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                <div className="flex flex-col gap-1">
-                                                                    <div
-                                                                        className="flex items-center gap-1.5 flex-wrap">
-                                                                        {trade.tradeType === TradeType.SHORT ? (
-                                                                            <span
-                                                                                className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                                                                SHORT
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span
-                                                                                className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                                                                LONG
-                                                                            </span>
-                                                                        )}
-                                                                        {trade.isAveragingShort && (
-                                                                            <span
-                                                                                className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
-                                                                                title="Averaging operation - excluded from USD statistics">
-                                                                                AVERAGING
-                                                                            </span>
-                                                                        )}
-                                                                        {trade.tradeType === TradeType.LONG && trade.initialAmount && trade.amount > trade.initialAmount && (
-                                                                            <span
-                                                                                className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap"
-                                                                                title="Position was averaged down through SHORT averaging operation">
-                                                                                AVERAGED ↓
-                                                                            </span>
-                                                                        )}
-                                                                        {isLongWithActiveShorts && (
-                                                                            <span
-                                                                                className="text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded whitespace-nowrap"
-                                                                                title="Has active SHORT positions">
-                                                                                🔒 Locked
-                                                                            </span>
-                                                                        )}
-                                                                        {splitInfo && (
-                                                                            <span
-                                                                                className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                                                                Split {splitInfo.part}/{splitInfo.total}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    {isChild && (
-                                                                        <div className="text-xs text-muted-foreground">
-                                                                            ↳ SHORT for parent LONG
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {getStatusBadge(trade.status)}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {trade.status === TradeStatus.OPEN ? (
-                                                                    trade.openDate ? (
-                                                                        new Date(trade.openDate).toLocaleDateString('en-US', {
-                                                                            year: 'numeric',
-                                                                            month: 'short',
-                                                                            day: 'numeric',
-                                                                        })
-                                                                    ) : '-'
-                                                                ) : trade.status === TradeStatus.FILLED ? (
-                                                                    trade.filledDate ? (
-                                                                        new Date(trade.filledDate).toLocaleDateString('en-US', {
-                                                                            year: 'numeric',
-                                                                            month: 'short',
-                                                                            day: 'numeric',
-                                                                        })
-                                                                    ) : '-'
-                                                                ) : '-'}
-                                                            </TableCell>
-                                                            <TableCell>${formatPrice(trade.entryPrice)}</TableCell>
-                                                            <TableCell><BlurredAmount
-                                                                amount={trade.sumPlusFee}/></TableCell>
-                                                            <TableCell>
-                                                                {formatAmount(trade.amount)}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {trade.exitPrice ? `$${formatPrice(trade.exitPrice)}` : '-'}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {profitPercent !== null ? (
-                                                                    <span
-                                                                        className={profitPercent >= 0 ? 'text-green-500' : 'text-red-500'}>
-                                  {profitPercent >= 0 ? '+' : ''}{profitPercent.toFixed(2)}%
-                                </span>
-                                                                ) : (
-                                                                    '-'
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {trade.tradeType === TradeType.SHORT && profitCoins !== null ? (
-                                                                    <span
-                                                                        className={profitCoins >= 0 ? 'text-green-500' : 'text-red-500'}>
-                                  {profitCoins >= 0 ? '+' : ''}{profitCoins.toFixed(8)} {trade.coinSymbol}
-                                </span>
-                                                                ) : profitUSD !== null ? (
-                                                                    <span
-                                                                        className={profitUSD >= 0 ? 'text-green-500' : 'text-red-500'}>
-                                  <BlurredAmount amount={profitUSD} showSign={true}/>
-                                </span>
-                                                                ) : (
-                                                                    '-'
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="text-right">
-                                                                <div className="flex justify-end gap-1">
-                                                                    {/* Edit button - available for open and filled trades */}
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => {
-                                                                            setTradeToEdit(trade);
-                                                                            setShowEditTradeDialog(true);
-                                                                        }}
-                                                                        title={isLongWithActiveShorts ? "Locked: Close all SHORT positions first" : "Edit Trade"}
-                                                                        disabled={isLongWithActiveShorts}
-                                                                    >
-                                                                        <Pencil className="h-4 w-4"/>
-                                                                    </Button>
-                                                                    {trade.status === TradeStatus.OPEN && (
-                                                                        <>
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                onClick={() => {
-                                                                                    setTradeToFill(trade);
-                                                                                    setShowMarkAsFilledDialog(true);
-                                                                                }}
-                                                                                title={isLongWithActiveShorts ? "Locked: Close all SHORT positions first" : "Mark as Filled"}
-                                                                                disabled={isLongWithActiveShorts}
-                                                                            >
-                                                                                <Check
-                                                                                    className="h-4 w-4 text-green-500"/>
-                                                                            </Button>
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                onClick={() => {
-                                                                                    setTradeToDelete(trade);
-                                                                                    setDeleteTradeDialogOpen(true);
-                                                                                }}
-                                                                                title={isLongWithActiveShorts ? "Locked: Close all SHORT positions first" : "Delete"}
-                                                                                disabled={isLongWithActiveShorts}
-                                                                            >
-                                                                                <Trash2
-                                                                                    className="h-4 w-4 text-destructive"/>
-                                                                            </Button>
-                                                                        </>
-                                                                    )}
-                                                                    {trade.status === TradeStatus.FILLED && (
-                                                                        <>
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                onClick={() => {
-                                                                                    setTradeToEdit(trade);
-                                                                                    setShowEditExitPriceModal(true);
-                                                                                }}
-                                                                                title={isLongWithActiveShorts ? "Locked: Close all SHORT positions first" : "Set Exit Price"}
-                                                                                disabled={isLongWithActiveShorts}
-                                                                            >
-                                                                                <DollarSign className="h-4 w-4"/>
-                                                                            </Button>
-                                                                            {/* Split button - for LONG or standalone SHORT (not SHORT from LONG) */}
-                                                                            {(trade.tradeType === TradeType.LONG ||
-                                                                                (trade.tradeType === TradeType.SHORT && !trade.parentTradeId)) && (
-                                                                                <Button
-                                                                                    variant="ghost"
-                                                                                    size="sm"
-                                                                                    onClick={() => {
-                                                                                        setTradeToSplit(trade);
-                                                                                        setShowSplitModal(true);
-                                                                                    }}
-                                                                                    title={isLongWithActiveShorts ? "Locked: Close all SHORT positions first" : "Split Position"}
-                                                                                    disabled={isLongWithActiveShorts}
-                                                                                >
-                                                                                    <MinusCircle
-                                                                                        className="h-4 w-4 text-yellow-500"/>
-                                                                                </Button>
-                                                                            )}
-                                                                            {/* Open SHORT button - only for LONG positions */}
-                                                                            {trade.tradeType === TradeType.LONG && (
-                                                                                <Button
-                                                                                    variant="ghost"
-                                                                                    size="sm"
-                                                                                    onClick={() => handleOpenShort(trade)}
-                                                                                    title={isLongWithActiveShorts ? "Locked: Close all SHORT positions first" : "Open SHORT from this LONG position"}
-                                                                                    disabled={isLongWithActiveShorts}
-                                                                                >
-                                                                                    <TrendingDown
-                                                                                        className="h-4 w-4 text-orange-500"/>
-                                                                                </Button>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => {
-                                                                            setTradeToClose(trade);
-                                                                            setShowCloseTradeDialog(true);
-                                                                        }}
-                                                                        title={isLongWithActiveShorts ? "Locked: Close all SHORT positions first" : "Close Trade"}
-                                                                        disabled={isLongWithActiveShorts}
-                                                                    >
-                                                                        Close
-                                                                    </Button>
-                                                                </div>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    );
-                                                };
-
-                                                // Render parent trade and its children
-                                                return (
-                                                    <>
-                                                        {renderTradeRow(group.parent, false, group.splitInfo)}
-                                                        {group.children.map(child => renderTradeRow(child, true, undefined))}
-                                                    </>
-                                                );
-                                            })}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                    <OpenTradesTable
+                        groupedOpenTrades={groupedOpenTrades}
+                        onCreateTrade={() => setShowCreateTradeModal(true)}
+                        onEditTrade={(trade) => {
+                            setTradeToEdit(trade);
+                            setShowEditTradeDialog(true);
+                        }}
+                        onFillTrade={(trade) => {
+                            setTradeToFill(trade);
+                            setShowMarkAsFilledDialog(true);
+                        }}
+                        onDeleteTrade={(trade) => {
+                            setTradeToDelete(trade);
+                            setDeleteTradeDialogOpen(true);
+                        }}
+                        onSetExitPrice={(trade) => {
+                            setTradeToEdit(trade);
+                            setShowEditExitPriceModal(true);
+                        }}
+                        onSplitTrade={(trade) => {
+                            setTradeToSplit(trade);
+                            setShowSplitModal(true);
+                        }}
+                        onOpenShort={handleOpenShort}
+                        onCloseTrade={(trade) => {
+                            setTradeToClose(trade);
+                            setShowCloseTradeDialog(true);
+                        }}
+                        formatPrice={formatPrice}
+                        formatAmount={formatAmount}
+                        calculateProfitPercent={calculateProfitPercent}
+                        calculateProfitUSD={calculateProfitUSD}
+                        calculateProfitCoins={calculateProfitCoins}
+                        hasActiveShortsOnLong={hasActiveShortsOnLong}
+                        getStatusBadge={getStatusBadge}
+                    />
 
                     <Card>
                         <CardHeader>
@@ -1083,114 +613,13 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
                                     No closed trades yet.
                                 </div>
                             ) : (
-                                <>
-                                    {/* Filters and Sorting */}
-                                    <div className="flex flex-wrap gap-3 mb-4 items-center">
-                                        <div className="flex items-center gap-2">
-                                            <Filter className="h-4 w-4 text-muted-foreground"/>
-                                            <span className="text-sm text-muted-foreground">Filters:</span>
-                                        </div>
-
-                                        {/* Coin Filter */}
-                                        <Select
-                                            value={closedTradesFilter.coin}
-                                            onValueChange={(value) =>
-                                                setClosedTradesFilter({...closedTradesFilter, coin: value})
-                                            }
-                                        >
-                                            <SelectTrigger className="w-[120px]">
-                                                <SelectValue placeholder="Coin"/>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Coins</SelectItem>
-                                                {uniqueCoins.map((coin) => (
-                                                    <SelectItem key={coin} value={coin}>
-                                                        {coin}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-
-                                        {/* Type Filter */}
-                                        <Select
-                                            value={closedTradesFilter.type}
-                                            onValueChange={(value) =>
-                                                setClosedTradesFilter({...closedTradesFilter, type: value})
-                                            }
-                                        >
-                                            <SelectTrigger className="w-[120px]">
-                                                <SelectValue placeholder="Type"/>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Types</SelectItem>
-                                                <SelectItem value={TradeType.LONG}>LONG</SelectItem>
-                                                <SelectItem value={TradeType.SHORT}>SHORT</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-
-                                        {/* Sort By */}
-                                        <Select
-                                            value={closedTradesFilter.sortBy}
-                                            onValueChange={(value: 'closeDate' | 'filledDate' | 'none') =>
-                                                setClosedTradesFilter({...closedTradesFilter, sortBy: value})
-                                            }
-                                        >
-                                            <SelectTrigger className="w-[150px]">
-                                                <SelectValue placeholder="Sort by"/>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="none">No Sort</SelectItem>
-                                                <SelectItem value="closeDate">Close Date</SelectItem>
-                                                <SelectItem value="filledDate">Filled Date</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-
-                                        {/* Sort Order */}
-                                        {closedTradesFilter.sortBy !== 'none' && (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setClosedTradesFilter({
-                                                        ...closedTradesFilter,
-                                                        sortOrder: closedTradesFilter.sortOrder === 'asc' ? 'desc' : 'asc',
-                                                    })
-                                                }
-                                            >
-                                                {closedTradesFilter.sortOrder === 'asc' ? (
-                                                    <ArrowUp className="h-4 w-4"/>
-                                                ) : (
-                                                    <ArrowDown className="h-4 w-4"/>
-                                                )}
-                                            </Button>
-                                        )}
-
-                                        {/* Clear Filters */}
-                                        {(closedTradesFilter.coin !== 'all' ||
-                                            closedTradesFilter.type !== 'all' ||
-                                            closedTradesFilter.sortBy !== 'closeDate') && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setClosedTradesFilter({
-                                                        coin: 'all',
-                                                        type: 'all',
-                                                        sortBy: 'closeDate',
-                                                        sortOrder: 'desc',
-                                                    })
-                                                }
-                                            >
-                                                <X className="h-4 w-4 mr-1"/>
-                                                Clear
-                                            </Button>
-                                        )}
-
-                                        <div className="ml-auto text-sm text-muted-foreground">
-                                            Showing {groupedClosedTrades.length} of {closedTrades.length} trades
-                                        </div>
-                                    </div>
-                                </>
+                                <ClosedTradesFilters
+                                    filter={closedTradesFilter}
+                                    onFilterChange={setClosedTradesFilter}
+                                    uniqueCoins={uniqueCoins}
+                                    filteredCount={groupedClosedTrades.length}
+                                    totalCount={closedTrades.length}
+                                />
                             )}
 
                             {groupedClosedTrades.length > 0 && (

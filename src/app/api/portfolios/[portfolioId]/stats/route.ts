@@ -178,18 +178,26 @@ export async function GET(
                 : 0;
 
         // Calculate Total Fees Paid (separate standard vs averaging)
+        // Include entry fees from FILLED and CLOSED trades, exit fees only from CLOSED
         let standardFees = 0;
         let averagingFees = 0;
 
-        closedTrades.forEach((trade) => {
+        // Get all trades that have been filled (FILLED or CLOSED status)
+        const filledAndClosedTrades = await Trade.find({
+            portfolioId,
+            status: {$in: [TradeStatus.FILLED, TradeStatus.CLOSED]},
+            isSplit: {$ne: true},
+        });
+
+        filledAndClosedTrades.forEach((trade) => {
             let tradeFees = 0;
 
-            // Entry fee: always present
+            // Entry fee: always present for FILLED and CLOSED trades
             const entryFee = (trade.sumPlusFee * trade.entryFee) / 100;
             tradeFees += entryFee;
 
             // Exit fee: only for closed trades with exitPrice
-            if (trade.exitPrice && trade.exitFee !== undefined) {
+            if (trade.status === TradeStatus.CLOSED && trade.exitPrice && trade.exitFee !== undefined) {
                 const exitFee = (trade.amount * trade.exitPrice * trade.exitFee) / 100;
                 tradeFees += exitFee;
             }

@@ -376,8 +376,8 @@ export default function PortfolioStatsPage({params}: StatsPageProps) {
                                             <TooltipContent className="max-w-xs">
                                                 <p className="text-xs">
                                                     Return on Investment - показывает, сколько процентов прибыли вы
-                                                    получили от вашего начального депозита.
-                                                    Рассчитывается как: (Общая прибыль / Начальный депозит) × 100%
+                                                    получили от суммы всех вложенных денег в закрытые сделки.
+                                                    Рассчитывается как: (Общая прибыль / Сумма всех инвестиций) × 100%
                                                 </p>
                                             </TooltipContent>
                                         </Tooltip>

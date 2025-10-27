@@ -152,6 +152,10 @@ export async function PUT(
 
         if (validatedData.amount !== undefined) {
             trade.amount = validatedData.amount;
+            // Синхронизация для Open позиций
+            if (trade.status === TradeStatus.OPEN) {
+                trade.initialAmount = validatedData.amount;
+            }
         }
 
         if (validatedData.sumPlusFee !== undefined) {
@@ -171,6 +175,10 @@ export async function PUT(
         // Update entry fields (for open/filled trades)
         if (validatedData.entryPrice !== undefined) {
             trade.entryPrice = validatedData.entryPrice;
+            // Синхронизация для Open позиций
+            if (trade.status === TradeStatus.OPEN) {
+                trade.initialEntryPrice = validatedData.entryPrice;
+            }
         }
 
         if (validatedData.depositPercent !== undefined) {

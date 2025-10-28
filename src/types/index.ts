@@ -235,3 +235,12 @@ export interface IUserSettings extends Document {
     createdAt: Date;
     updatedAt: Date;
 }
+
+// Time Filter types
+export type TimePeriodMode = 'year' | 'month' | 'all';
+
+export interface TimeFilterParams {
+    year?: number;
+    month?: number; // 1-12
+    period?: 'all';
+}

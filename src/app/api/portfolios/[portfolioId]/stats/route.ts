@@ -14,6 +14,7 @@ import {
     TradeType,
     TradeWithProfit,
 } from '@/types';
+import {getDateRangeForYear, getDateRangeForMonth, getCurrentYear} from '@/lib/date-utils';
 
 interface RouteParams {
     params: Promise<{
@@ -93,7 +94,11 @@ const calculateProfitUSD = (trade: ITrade): number => {
 
 /**
  * GET /api/portfolios/[portfolioId]/stats
- * Returns portfolio statistics
+ * Returns portfolio statistics with optional time filtering
+ * Query params:
+ * - year: filter by year (default: current year)
+ * - month: filter by month (1-12, requires year)
+ * - period: 'all' to show all time statistics
  */
 export async function GET(
     request: NextRequest,
@@ -110,6 +115,7 @@ export async function GET(
         }
 
         const {portfolioId} = await params;
+        const {searchParams} = new URL(request.url);
 
         await connectDB();
 
@@ -130,15 +136,105 @@ export async function GET(
             );
         }
 
-        // Get all trades for counting (exclude split originals)
-        const allTrades = await Trade.find({portfolioId, isSplit: {$ne: true}});
+        // Parse query parameters for time filtering
+        const yearParam = searchParams.get('year');
+        const monthParam = searchParams.get('month');
+        const periodParam = searchParams.get('period');
 
-        // Get only closed trades for statistics (exclude split originals)
-        const closedTrades = await Trade.find({
+        // Determine snapshot date (end of period)
+        // For current period: use today's date
+        // For past periods: use last moment of period
+        const now = new Date();
+        const currentYear = getCurrentYear();
+        const currentMonth = now.getMonth() + 1; // 1-12
+
+        let endOfPeriod: Date;
+        let closedInPeriodQuery: any = {
             portfolioId,
             status: TradeStatus.CLOSED,
             isSplit: {$ne: true},
-        }).sort({closeDate: 1});
+        };
+
+        if (periodParam === 'all') {
+            // No date filter - snapshot at current moment
+            endOfPeriod = now;
+        } else if (yearParam && monthParam) {
+            // Filter by specific month
+            const year = parseInt(yearParam);
+            const month = parseInt(monthParam);
+            const dateRange = getDateRangeForMonth(year, month);
+
+            // Determine snapshot date: today if current month, otherwise end of month
+            if (year === currentYear && month === currentMonth) {
+                endOfPeriod = now;
+            } else {
+                endOfPeriod = dateRange.end;
+            }
+
+            closedInPeriodQuery.closeDate = {
+                $gte: dateRange.start,
+                $lte: dateRange.end,
+            };
+        } else if (yearParam) {
+            // Filter by year
+            const year = parseInt(yearParam);
+            const dateRange = getDateRangeForYear(year);
+
+            // Determine snapshot date: today if current year, otherwise end of year
+            if (year === currentYear) {
+                endOfPeriod = now;
+            } else {
+                endOfPeriod = dateRange.end;
+            }
+
+            closedInPeriodQuery.closeDate = {
+                $gte: dateRange.start,
+                $lte: dateRange.end,
+            };
+        } else {
+            // Default: current year
+            const dateRange = getDateRangeForYear(currentYear);
+            endOfPeriod = now; // Current year = snapshot at today
+
+            closedInPeriodQuery.closeDate = {
+                $gte: dateRange.start,
+                $lte: dateRange.end,
+            };
+        }
+
+        // Build snapshot queries for OPEN and FILLED trades
+        // OPEN: trades opened by endOfPeriod AND not filled by endOfPeriod
+        let openedInPeriodQuery: any = {
+            portfolioId,
+            openDate: {$lte: endOfPeriod},
+            $or: [
+                {filledDate: {$gt: endOfPeriod}},
+                {filledDate: null},
+            ],
+            isSplit: {$ne: true},
+        };
+
+        // FILLED: trades filled by endOfPeriod AND not closed by endOfPeriod
+        let filledInPeriodQuery: any = {
+            portfolioId,
+            filledDate: {$lte: endOfPeriod},
+            $or: [
+                {closeDate: {$gt: endOfPeriod}},
+                {closeDate: null},
+            ],
+            isSplit: {$ne: true},
+        };
+
+        // Get trades using snapshot approach
+        // OPEN: trades in OPEN status at endOfPeriod (opened but not filled yet)
+        // FILLED: trades in FILLED status at endOfPeriod (filled but not closed yet)
+        // CLOSED: trades closed within the period
+        const tradesOpenedInPeriod = await Trade.find(openedInPeriodQuery);
+        const tradesFilledInPeriod = await Trade.find(filledInPeriodQuery);
+        const tradesClosedInPeriod = await Trade.find(closedInPeriodQuery).sort({closeDate: 1});
+
+        // Use tradesClosedInPeriod for profit calculations
+        const closedTrades = tradesClosedInPeriod;
 
         // Calculate profits for each closed trade
         const tradesWithProfit: TradeWithProfit[] = closedTrades.map((trade) => {
@@ -177,35 +273,31 @@ export async function GET(
                 ? sumOfProfitPercents / tradesForUSDStats.length
                 : 0;
 
-        // Calculate Total Fees Paid (separate standard vs averaging)
-        // Include entry fees from FILLED and CLOSED trades, exit fees only from CLOSED
+        // Calculate Total Fees Paid using cash method
+        // Entry fee counted in period when filled, Exit fee counted in period when closed
+        // We already have tradesFilledInPeriod and tradesClosedInPeriod from above
         let standardFees = 0;
         let averagingFees = 0;
 
-        // Get all trades that have been filled (FILLED or CLOSED status)
-        const filledAndClosedTrades = await Trade.find({
-            portfolioId,
-            status: {$in: [TradeStatus.FILLED, TradeStatus.CLOSED]},
-            isSplit: {$ne: true},
+        // Calculate entry fees from trades filled in period
+        tradesFilledInPeriod.forEach((trade) => {
+            const entryFee = (trade.sumPlusFee * trade.entryFee) / 100;
+            if (trade.isAveragingShort) {
+                averagingFees += entryFee;
+            } else {
+                standardFees += entryFee;
+            }
         });
 
-        filledAndClosedTrades.forEach((trade) => {
-            let tradeFees = 0;
-
-            // Entry fee: always present for FILLED and CLOSED trades
-            const entryFee = (trade.sumPlusFee * trade.entryFee) / 100;
-            tradeFees += entryFee;
-
-            // Exit fee: only for closed trades with exitPrice
-            if (trade.status === TradeStatus.CLOSED && trade.exitPrice && trade.exitFee !== undefined) {
+        // Calculate exit fees from trades closed in period
+        tradesClosedInPeriod.forEach((trade) => {
+            if (trade.exitPrice && trade.exitFee !== undefined) {
                 const exitFee = (trade.amount * trade.exitPrice * trade.exitFee) / 100;
-                tradeFees += exitFee;
-            }
-
-            if (trade.isAveragingShort) {
-                averagingFees += tradeFees;
-            } else {
-                standardFees += tradeFees;
+                if (trade.isAveragingShort) {
+                    averagingFees += exitFee;
+                } else {
+                    standardFees += exitFee;
+                }
             }
         });
 
@@ -240,16 +332,15 @@ export async function GET(
         const totalROI =
             totalInvestment > 0 ? (totalProfitUSD / totalInvestment) * 100 : 0;
 
-        // 5. Total Trades by Status (exclude averaging SHORT)
-        const standardTrades = allTrades.filter((t) => !t.isAveragingShort);
-        const openTrades = standardTrades.filter((t) => t.status === TradeStatus.OPEN);
-        const filledTrades = standardTrades.filter((t) => t.status === TradeStatus.FILLED);
-        const closedStandardTrades = closedTrades.filter((t) => !t.isAveragingShort);
+        // 5. Total Trades snapshot at end of period (exclude averaging SHORT)
+        const standardOpenedTrades = tradesOpenedInPeriod.filter((t) => !t.isAveragingShort);
+        const standardFilledTrades = tradesFilledInPeriod.filter((t) => !t.isAveragingShort);
+        const closedStandardTrades = tradesClosedInPeriod.filter((t) => !t.isAveragingShort);
 
         const totalTrades = {
-            open: openTrades.length,
-            filled: filledTrades.length,
-            closed: closedStandardTrades.length,
+            open: standardOpenedTrades.length,     // Snapshot: OPEN status at endOfPeriod
+            filled: standardFilledTrades.length,   // Snapshot: FILLED status at endOfPeriod
+            closed: closedStandardTrades.length,   // Closed within the period
         };
 
         // 6. Best/Worst Trade (by Profit USD) (exclude averaging SHORT)

@@ -9,9 +9,11 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from '@/components/ui/table';
 import {useToast} from '@/components/ui/use-toast';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
-import {IPortfolio, PortfolioStatistics} from '@/types';
+import {IPortfolio, PortfolioStatistics, TimePeriodMode} from '@/types';
 import {ArrowLeft, BarChart3, DollarSign, HelpCircle, Target, TrendingDown, TrendingUp, Trophy} from 'lucide-react';
 import {CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis,} from 'recharts';
+import {TimeFilterSelector} from '@/components/features/stats/TimeFilterSelector';
+import {getCurrentYear} from '@/lib/date-utils';
 
 interface StatsPageProps {
     params: {
@@ -28,14 +30,10 @@ export default function PortfolioStatsPage({params}: StatsPageProps) {
     const [showCurrentValue, setShowCurrentValue] = useState(false);
     const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
     const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+    const [filterMode, setFilterMode] = useState<TimePeriodMode>('year');
+    const [filterYear, setFilterYear] = useState<number | undefined>(getCurrentYear());
+    const [filterMonth, setFilterMonth] = useState<number | undefined>(undefined);
     const {toast} = useToast();
-
-    useEffect(() => {
-        if (status === 'authenticated') {
-            fetchPortfolio();
-            fetchStats();
-        }
-    }, [status, params.id]);
 
     if (status === 'loading') {
         return (
@@ -72,10 +70,20 @@ export default function PortfolioStatsPage({params}: StatsPageProps) {
         }
     };
 
-    const fetchStats = async () => {
+    const fetchStatsWithParams = async (mode: TimePeriodMode, year?: number, month?: number) => {
         setIsLoading(true);
         try {
-            const response = await fetch(`/api/portfolios/${params.id}/stats`);
+            // Build query string based on filter
+            let queryParams = '';
+            if (mode === 'year' && year) {
+                queryParams = `?year=${year}`;
+            } else if (mode === 'month' && year && month) {
+                queryParams = `?year=${year}&month=${month}`;
+            } else if (mode === 'all') {
+                queryParams = '?period=all';
+            }
+
+            const response = await fetch(`/api/portfolios/${params.id}/stats${queryParams}`);
             const data = await response.json();
 
             if (!response.ok) {
@@ -96,6 +104,23 @@ export default function PortfolioStatsPage({params}: StatsPageProps) {
             setIsLoading(false);
         }
     };
+
+    const handleFilterChange = (mode: TimePeriodMode, year?: number, month?: number) => {
+        setFilterMode(mode);
+        setFilterYear(year);
+        setFilterMonth(month);
+
+        // Immediately fetch stats with new parameters
+        fetchStatsWithParams(mode, year, month);
+    };
+
+    // Initial load
+    useEffect(() => {
+        if (status === 'authenticated') {
+            fetchPortfolio();
+            fetchStatsWithParams(filterMode, filterYear, filterMonth);
+        }
+    }, [status, params.id]);
 
     const fetchCurrentPrices = async () => {
         if (!stats?.short.totalProfitCoins) return;
@@ -227,6 +252,14 @@ export default function PortfolioStatsPage({params}: StatsPageProps) {
                                 </div>
                             )}
                         </div>
+
+                        {/* Time Filter Selector */}
+                        <TimeFilterSelector
+                            mode={filterMode}
+                            year={filterYear}
+                            month={filterMonth}
+                            onFilterChange={handleFilterChange}
+                        />
 
                         {/* Overall Metrics Grid */}
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

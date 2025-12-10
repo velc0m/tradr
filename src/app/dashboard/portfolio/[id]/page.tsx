@@ -63,6 +63,7 @@ import {
     formatPrice,
     formatAmount
 } from '@/lib/trade-calculations';
+import {getCurrentYear} from '@/lib/date-utils';
 
 interface PortfolioPageProps {
     params: {
@@ -167,7 +168,8 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
 
     const fetchTrades = async () => {
         try {
-            const response = await fetch(`/api/portfolios/${params.id}/trades`);
+            const currentYear = getCurrentYear();
+            const response = await fetch(`/api/portfolios/${params.id}/trades?year=${currentYear}`);
             const data = await response.json();
 
             if (data.success && data.data) {
@@ -184,7 +186,8 @@ export default function PortfolioPage({params}: PortfolioPageProps) {
 
     const fetchQuickStats = async () => {
         try {
-            const response = await fetch(`/api/portfolios/${params.id}/stats`);
+            const currentYear = getCurrentYear();
+            const response = await fetch(`/api/portfolios/${params.id}/stats?year=${currentYear}`);
             const data = await response.json();
 
             if (data.success && data.data) {

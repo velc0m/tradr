@@ -6,6 +6,7 @@ import Trade from '@/models/Trade';
 import Portfolio from '@/models/Portfolio';
 import {ApiResponse, CreateTradeInput, TradeStatus, TradeType} from '@/types';
 import {z} from 'zod';
+import {getDateRangeForYear, getDateRangeForMonth, getCurrentYear} from '@/lib/date-utils';
 
 interface RouteParams {
     params: Promise<{
@@ -31,7 +32,12 @@ const createTradeSchema = z.object({
 
 /**
  * GET /api/portfolios/[portfolioId]/trades
- * Returns all trades for a portfolio
+ * Returns trades for a portfolio with optional time filtering
+ * Query params:
+ * - year: filter CLOSED trades by year (default: current year)
+ * - month: filter CLOSED trades by month (1-12, requires year)
+ * - period: 'all' to show all trades
+ * Note: OPEN and FILLED trades are always returned regardless of filters
  */
 export async function GET(
     request: NextRequest,
@@ -48,6 +54,7 @@ export async function GET(
         }
 
         const {portfolioId} = await params;
+        const {searchParams} = new URL(request.url);
 
         await connectDB();
 
@@ -68,11 +75,61 @@ export async function GET(
             );
         }
 
-        const trades = await Trade.find({portfolioId}).sort({openDate: -1});
+        // Parse query parameters for time filtering
+        const yearParam = searchParams.get('year');
+        const monthParam = searchParams.get('month');
+        const periodParam = searchParams.get('period');
+
+        // Get all OPEN and FILLED trades (always shown)
+        const openAndFilledTrades = await Trade.find({
+            portfolioId,
+            status: {$in: [TradeStatus.OPEN, TradeStatus.FILLED]},
+        }).sort({openDate: -1});
+
+        // Get CLOSED trades with time filtering
+        let closedTradesQuery: any = {
+            portfolioId,
+            status: TradeStatus.CLOSED,
+        };
+
+        // Apply time filter for closed trades
+        if (periodParam === 'all') {
+            // No date filter - show all closed trades
+        } else if (yearParam && monthParam) {
+            // Filter by specific month
+            const year = parseInt(yearParam);
+            const month = parseInt(monthParam);
+            const dateRange = getDateRangeForMonth(year, month);
+            closedTradesQuery.closeDate = {
+                $gte: dateRange.start,
+                $lte: dateRange.end,
+            };
+        } else if (yearParam) {
+            // Filter by year
+            const year = parseInt(yearParam);
+            const dateRange = getDateRangeForYear(year);
+            closedTradesQuery.closeDate = {
+                $gte: dateRange.start,
+                $lte: dateRange.end,
+            };
+        } else {
+            // Default: current year
+            const currentYear = getCurrentYear();
+            const dateRange = getDateRangeForYear(currentYear);
+            closedTradesQuery.closeDate = {
+                $gte: dateRange.start,
+                $lte: dateRange.end,
+            };
+        }
+
+        const closedTrades = await Trade.find(closedTradesQuery).sort({closeDate: -1});
+
+        // Combine and sort all trades
+        const allTrades = [...openAndFilledTrades, ...closedTrades];
 
         return NextResponse.json({
             success: true,
-            data: trades,
+            data: allTrades,
         });
     } catch (error) {
         console.error('Error fetching trades:', error);
